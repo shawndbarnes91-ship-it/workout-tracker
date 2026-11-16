@@ -4,7 +4,7 @@
 import { all, save, remove } from './db.js';
 import {
   h, clear, field, toast, openSheet, confirmSheet, todayStr, fmtDay, fmtDuration, fmtPace,
-  round2, startOfWeek, addDays, dateStr, sortBy, emptyNote,
+  round2, startOfWeek, addDays, dateStr, sortBy, emptyNote, pageHead,
 } from './util.js';
 import { runPace, runRecords, detectRunPRs } from './prs.js';
 
@@ -31,7 +31,7 @@ export function padWeeks(entries) {
 
 function cardioForm(type, entry, onSubmit, submitLabel) {
   const date = h('input', { class: 'input', type: 'date', value: entry.date || todayStr() });
-  const dist = h('input', { class: 'input big-input', type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0.0', value: entry.distance_mi ?? '' });
+  const dist = h('input', { class: 'input big-input', type: 'number', inputmode: 'decimal', step: 'any', placeholder: '0.0', 'aria-label': 'Distance in miles', value: entry.distance_mi ?? '' });
   const notes = h('input', { class: 'input', type: 'text', placeholder: 'Optional notes', value: entry.notes || '' });
   const form = h('div', { class: 'stack' });
   let min = null;
@@ -46,9 +46,9 @@ function cardioForm(type, entry, onSubmit, submitLabel) {
   form.append(field('Date', date));
   if (type === 'run') {
     const dur = Number(entry.duration_sec) || 0;
-    min = h('input', { class: 'input big-input', type: 'number', inputmode: 'numeric', placeholder: 'min', value: dur ? Math.floor(dur / 60) : '' });
-    sec = h('input', { class: 'input big-input', type: 'number', inputmode: 'numeric', placeholder: 'sec', value: dur ? dur % 60 : '' });
-    form.append(h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Duration'), h('div', { class: 'row gap' }, min, h('span', { class: 'muted' }, ':'), sec)));
+    min = h('input', { class: 'input big-input', type: 'number', inputmode: 'numeric', placeholder: 'min', 'aria-label': 'Minutes', value: dur ? Math.floor(dur / 60) : '' });
+    sec = h('input', { class: 'input big-input', type: 'number', inputmode: 'numeric', placeholder: 'sec', 'aria-label': 'Seconds', value: dur ? dur % 60 : '' });
+    form.append(h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Duration (min : sec)'), h('div', { class: 'duration-row' }, min, h('span', { class: 'duration-sep', 'aria-hidden': 'true' }, ':'), sec)));
     [min, sec, dist].forEach((x) => x.addEventListener('input', updatePace));
   }
   form.append(field('Distance (miles)', dist));
@@ -77,10 +77,12 @@ function cardioForm(type, entry, onSubmit, submitLabel) {
 
 function entryRow(r, onEdit) {
   const p = runPace(r);
-  return h('button', { type: 'button', class: 'list-row', onclick: () => onEdit(r) },
-    h('span', { class: 'grow' }, fmtDay(r.date), r.notes ? h('span', { class: 'muted small' }, ` · ${r.notes}`) : null),
-    h('span', { class: 'muted' },
-      r.type === 'run' ? `${round2(r.distance_mi)} mi · ${fmtDuration(r.duration_sec)} · ${fmtPace(p)}` : `${round2(r.distance_mi)} mi`)
+  return h('button', { type: 'button', class: 'list-row nav', 'data-multiline': '', onclick: () => onEdit(r) },
+    h('span', { class: 'grow' },
+      h('span', { class: 'row-title' }, fmtDay(r.date)),
+      r.type === 'run' ? h('span', { class: 'row-sub num' }, `${fmtDuration(r.duration_sec)} · ${fmtPace(p)}`) : null,
+      r.notes ? h('span', { class: 'row-sub' }, r.notes) : null),
+    h('span', { class: 'trail' }, `${round2(r.distance_mi)} mi`)
   );
 }
 
@@ -115,10 +117,7 @@ export async function renderCardio(root, type, onBack) {
   const mine = entries.filter((r) => r.type === type);
   clear(root);
   root.append(
-    h('header', { class: 'page-head' },
-      h('button', { type: 'button', class: 'btn-text back', onclick: onBack }, '‹ Back'),
-      h('h1', null, type === 'run' ? 'Log run' : 'Log walking pad')
-    )
+    pageHead({ title: type === 'run' ? 'Run' : 'Walking pad', back: onBack, backLabel: 'Workout' })
   );
 
   if (type === 'run') {
@@ -129,7 +128,10 @@ export async function renderCardio(root, type, onBack) {
         last
           ? [
             h('div', { class: 'section-label' }, `Last run · ${fmtDay(last.date)}`),
-            h('div', { class: 'big-stat' }, `${round2(last.distance_mi)} mi · ${fmtDuration(last.duration_sec)} · ${fmtPace(runPace(last))}`),
+            h('div', { class: 'two-col three' },
+              h('div', null, h('div', { class: 'stat-label' }, 'Distance'), h('div', { class: 'big-stat' }, `${round2(last.distance_mi)} mi`)),
+              h('div', null, h('div', { class: 'stat-label' }, 'Time'), h('div', { class: 'big-stat' }, fmtDuration(last.duration_sec))),
+              h('div', null, h('div', { class: 'stat-label' }, 'Pace'), h('div', { class: 'big-stat' }, fmtPace(runPace(last)).replace(' /mi', '')))),
             h('div', { class: 'cue' }, 'Go a little farther or a little faster than last time.'),
           ]
           : h('div', { class: 'cue' }, 'First run logged here. Any distance counts.'),
@@ -149,8 +151,8 @@ export async function renderCardio(root, type, onBack) {
         h('div', { class: 'section-label' }, last ? `Last entry · ${fmtDay(last.date)}` : 'No walking pad entries yet'),
         last ? h('div', { class: 'big-stat' }, `${round2(last.distance_mi)} mi`) : null,
         h('div', { class: 'two-col' },
-          h('div', null, h('div', { class: 'muted small' }, 'This week'), h('div', { class: 'big-stat' }, `${round2(w.thisWeek)} mi`)),
-          h('div', null, h('div', { class: 'muted small' }, 'Last week'), h('div', { class: 'big-stat' }, `${round2(w.lastWeek)} mi`))
+          h('div', null, h('div', { class: 'stat-label' }, 'This week'), h('div', { class: 'big-stat' }, `${round2(w.thisWeek)} mi`)),
+          h('div', null, h('div', { class: 'stat-label' }, 'Last week'), h('div', { class: 'big-stat' }, `${round2(w.lastWeek)} mi`))
         ),
         h('div', { class: 'cue' + (beat ? ' cue-good' : '') },
           w.lastWeek > 0
@@ -161,6 +163,7 @@ export async function renderCardio(root, type, onBack) {
   }
 
   root.append(
+    h('div', { class: 'section-label' }, type === 'run' ? 'New run' : 'New entry'),
     h('div', { class: 'card' },
       cardioForm(type, {}, async (row) => {
         const prs = detectRunPRs(entries, row);
@@ -171,6 +174,6 @@ export async function renderCardio(root, type, onBack) {
       }, type === 'run' ? 'Save run' : 'Save walking pad')
     ),
     h('div', { class: 'section-label' }, 'Recent'),
-    mine.length ? h('div', { class: 'list card' }, mine.slice(0, 15).map((r) => entryRow(r, (e) => openCardioEditor(e, rerender)))) : emptyNote('Nothing logged yet.')
+    mine.length ? h('div', { class: 'list card' }, mine.slice(0, 15).map((r) => entryRow(r, (e) => openCardioEditor(e, rerender)))) : h('div', { class: 'card' }, emptyNote('Nothing logged yet.'))
   );
 }

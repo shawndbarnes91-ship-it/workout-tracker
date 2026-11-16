@@ -60,8 +60,8 @@ function render() {
   el.replaceChildren(
     h('div', { class: 'timer-bar', style: { width: pct + '%' } }),
     h('div', { class: 'timer-row' },
-      h('button', { type: 'button', class: 'timer-btn', onclick: () => adjust(-15), 'aria-label': 'Fifteen seconds less' }, '−15'),
       h('div', { class: 'timer-time', 'aria-live': 'off' }, h('span', { class: 'timer-label' }, 'Rest'), fmt(left)),
+      h('button', { type: 'button', class: 'timer-btn', onclick: () => adjust(-15), 'aria-label': 'Fifteen seconds less' }, '−15'),
       h('button', { type: 'button', class: 'timer-btn', onclick: () => adjust(15), 'aria-label': 'Fifteen seconds more' }, '+15'),
       h('button', { type: 'button', class: 'timer-btn', onclick: stop }, 'Skip')
     )
@@ -73,7 +73,7 @@ function finish() {
   clearInterval(tick);
   tick = null;
   beep();
-  el.replaceChildren(h('div', { class: 'timer-row' }, h('div', { class: 'timer-time' }, 'Rest done. Next set.')));
+  el.replaceChildren(h('div', { class: 'timer-row' }, h('div', { class: 'timer-time timer-done' }, 'Rest done. Next set.')));
   clearTimeout(doneTimeout);
   doneTimeout = setTimeout(stop, 4000);
 }

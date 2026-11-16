@@ -86,9 +86,13 @@ function dotClass() {
 
 function renderStatus() {
   if (!statusEl) return;
-  statusEl.className = 'sync-status';
+  // The dot alone means all is well; anything that needs attention also shows its words.
+  const quiet = state.status === 'local' || (navigator.onLine && state.status !== 'error' && state.pending === 0);
+  statusEl.classList.add('sync-status');
+  statusEl.classList.toggle('show-label', !quiet);
   statusEl.replaceChildren(h('span', { class: 'dot ' + dotClass() }), h('span', { class: 'sync-label' }, label()));
   statusEl.title = state.error ? `Sync error: ${state.error}` : label();
+  statusEl.setAttribute('aria-label', `Sync: ${label()}`);
 }
 
 export function mountStatus(el) {

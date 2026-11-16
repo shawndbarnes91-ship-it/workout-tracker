@@ -2,7 +2,7 @@
 // picker used by "Add Exercise" during a session.
 
 import { save, saveMany, remove } from './db.js';
-import { h, add, clear, openSheet, field, toast, confirmSheet, emptyNote } from './util.js';
+import { h, add, clear, openSheet, field, toast, confirmSheet, emptyNote, pageHead, icon } from './util.js';
 import { loadLifting, LOAD_TYPES } from './lifting-data.js';
 import { MUSCLE_GROUPS } from './seed.js';
 
@@ -26,17 +26,17 @@ export async function renderLibrary(root, onBack) {
       listWrap.append(
         h('details', { class: 'card cat-card', open: q ? true : null },
           h('summary', { class: 'cat-summary' },
-            h('span', { class: 'grow' }, cat.name, h('span', { class: 'muted small' }, ` · ${cat.muscle_group || 'No group'} · ${exs.length}`))
+            h('span', { class: 'grow' }, h('span', { class: 'row-title' }, cat.name), h('span', { class: 'row-sub' }, `${cat.muscle_group || 'No group'} · ${exs.length}`))
           ),
           h('div', { class: 'list' },
             exs.length ? exs.map((ex) =>
               h('button', {
                 type: 'button',
-                class: 'list-row',
+                class: 'list-row nav', 'data-multiline': '',
                 onclick: () => openExerciseEditor({ exercise: ex, data: d, onSaved: rerender }),
               },
-              h('span', { class: 'grow' }, ex.name, ex.archived ? h('span', { class: 'muted small' }, ' (archived)') : null),
-              h('span', { class: 'muted small' }, ex.load_type))
+              h('span', { class: 'grow row-title' }, ex.name, ex.archived ? h('span', { class: 'muted small' }, ' (archived)') : null),
+              h('span', { class: 'trail' }, ex.load_type))
             ) : emptyNote('No exercises yet.'),
             h('div', { class: 'row gap' },
               h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => openExerciseEditor({ presetCategoryId: cat.id, data: d, onSaved: rerender }) }, 'Add exercise'),
@@ -49,14 +49,11 @@ export async function renderLibrary(root, onBack) {
     if (!any) listWrap.append(emptyNote('Nothing matches.'));
   };
 
-  const searchInput = h('input', { type: 'search', class: 'input', placeholder: 'Search exercises', value: search });
+  const searchInput = h('input', { type: 'search', class: 'input', placeholder: 'Search exercises', 'aria-label': 'Search exercises', value: search });
   searchInput.addEventListener('input', () => { search = searchInput.value; drawList(); });
 
   root.append(
-    h('header', { class: 'page-head' },
-      h('button', { type: 'button', class: 'btn-text back', onclick: onBack }, '‹ Back'),
-      h('h1', null, 'Exercises')
-    ),
+    pageHead({ title: 'Exercises', back: onBack, backLabel: 'Workout' }),
     h('div', { class: 'row gap' },
       h('button', { type: 'button', class: 'btn btn-primary grow', onclick: () => openExerciseEditor({ data: d, onSaved: rerender }) }, 'Add exercise'),
       h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => openCategoryEditor({ data: d, onSaved: rerender }) }, 'Add category')
@@ -78,7 +75,7 @@ export async function openExerciseEditor({ exercise = null, presetCategoryId = n
   const currentCats = new Set(exercise ? d.catsByEx.get(exercise.id) || [] : presetCategoryId ? [presetCategoryId] : []);
 
   openSheet(exercise ? 'Edit exercise' : 'New exercise', (body, api) => {
-    const name = h('input', { class: 'input', type: 'text', value: ex.name, placeholder: 'Exercise name', autocomplete: 'off' });
+    const name = h('input', { class: 'input', type: 'text', value: ex.name, placeholder: 'Exercise name', autocomplete: 'off', maxlength: '60' });
     const load = h('select', { class: 'input', value: ex.load_type }, LOAD_TYPES.map((t) => h('option', { value: t.value }, t.label)));
     const bar = h('input', { class: 'input', type: 'number', inputmode: 'decimal', value: ex.bar_lb ?? 45 });
     const barField = field('Bar or sled weight (lb)', bar, 'Used by the plate calculator.');
@@ -185,41 +182,64 @@ export async function openCategoryEditor({ category = null, data = null, onSaved
   });
 }
 
-/** Pick any exercise from the library, or create one on the spot. */
-export async function openExercisePicker({ title = 'Add exercise', onPick }) {
+/**
+ * Pick an exercise, or create one on the spot. With categoryId, that category's
+ * exercises come first (the slot's own options), then everything else.
+ */
+export async function openExercisePicker({ title = 'Add exercise', subtitle, categoryId = null, currentId = null, onPick }) {
   const d = await loadLifting();
   let q = '';
   openSheet(title, (body, api) => {
-    const list = h('div', { class: 'stack' });
-    const input = h('input', { type: 'search', class: 'input', placeholder: 'Search exercises' });
+    const list = h('div', { class: 'stack picker-list' });
+    const input = h('input', { type: 'search', class: 'input', placeholder: 'Search all exercises', 'aria-label': 'Search exercises' });
+    const row = (ex) => h('button', {
+      type: 'button',
+      class: 'list-row',
+      'data-multiline': '',
+      'aria-current': ex.id === currentId ? 'true' : null,
+      onclick: () => { api.close(); onPick(ex); },
+    },
+    h('span', { class: 'grow row-title' }, ex.name),
+    ex.id === currentId ? icon('check') : h('span', { class: 'trail' }, ex.load_type));
+    const section = (label, exs) => {
+      if (!exs.length) return 0;
+      list.append(h('div', { class: 'section-label' }, label), h('div', { class: 'list card' }, exs.map(row)));
+      return exs.length;
+    };
     const draw = () => {
       clear(list);
       const ql = q.trim().toLowerCase();
+      const match = (e) => !e.archived && (!ql || e.name.toLowerCase().includes(ql));
       let shown = 0;
-      for (const cat of d.categories) {
-        const exs = (d.exsByCat.get(cat.id) || []).filter((e) => !e.archived && (!ql || e.name.toLowerCase().includes(ql)));
-        if (!exs.length) continue;
-        list.append(h('div', { class: 'section-label' }, cat.name));
-        for (const ex of exs) {
-          shown += 1;
-          list.append(h('button', { type: 'button', class: 'list-row', onclick: () => { api.close(); onPick(ex); } }, h('span', { class: 'grow' }, ex.name), h('span', { class: 'muted small' }, ex.load_type)));
-        }
+      const first = categoryId ? (d.exsByCat.get(categoryId) || []).filter(match) : [];
+      const firstIds = new Set(first.map((e) => e.id));
+      if (categoryId) {
+        const cat = d.catById.get(categoryId);
+        shown += section(cat ? `${cat.name} · this slot` : 'This slot', first);
       }
-      if (!shown) list.append(emptyNote('No match. Create it below.'));
+      const seen = new Set(firstIds);
+      for (const cat of d.categories) {
+        if (cat.id === categoryId) continue;
+        const exs = (d.exsByCat.get(cat.id) || []).filter((e) => match(e) && !seen.has(e.id));
+        exs.forEach((e) => seen.add(e.id));
+        shown += section(cat.name, exs);
+      }
+      if (!shown) list.append(emptyNote('No match. Create it with New exercise.'));
     };
     input.addEventListener('input', () => { q = input.value; draw(); });
     body.append(
-      h('button', {
-        type: 'button',
-        class: 'btn btn-primary block',
-        onclick: () => {
-          api.close();
-          openExerciseEditor({ data: d, onSaved: (ex) => ex && onPick(ex) });
-        },
-      }, 'Create new exercise'),
-      input,
+      h('div', { class: 'picker-search row gap' },
+        h('div', { class: 'grow' }, input),
+        h('button', {
+          type: 'button',
+          class: 'btn btn-secondary',
+          onclick: () => {
+            api.close();
+            openExerciseEditor({ data: d, presetCategoryId: categoryId, onSaved: (ex) => ex && onPick(ex) });
+          },
+        }, icon('plus'), 'New')),
       list
     );
     draw();
-  });
+  }, { subtitle });
 }

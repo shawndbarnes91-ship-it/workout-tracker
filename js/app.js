@@ -48,6 +48,38 @@ async function show(tab, { resetScroll = true } = {}) {
   window.scrollTo(0, resetScroll ? 0 : y);
 }
 
+/**
+ * The sync dot sits in each screen's header. Screens re-render often, so a watcher
+ * moves the one indicator into the header's slot whenever a new header appears.
+ */
+function dockSyncStatus() {
+  const el = document.getElementById('sync-status');
+  const view = document.getElementById('view');
+  const dock = () => {
+    const slot = view.querySelector('.page-head .sync-slot');
+    if (slot) {
+      if (el.parentNode !== slot) slot.append(el);
+      el.classList.remove('sync-park');
+    } else if (el.parentNode !== document.body) {
+      el.classList.add('sync-park');
+      document.body.append(el);
+    }
+  };
+  new MutationObserver(dock).observe(view, { childList: true });
+  dock();
+}
+
+/**
+ * In iPhone Safari (not the home-screen app) the page can run under the status bar
+ * while the safe-area inset reads 0, so give the header a floor there.
+ */
+function setTopFloor() {
+  const ua = navigator.userAgent || '';
+  const iPhone = /iPhone|iPod/.test(ua);
+  const standalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  if (iPhone && !standalone) document.documentElement.style.setProperty('--min-top', '54px');
+}
+
 function bindTabs() {
   document.querySelectorAll('.tab').forEach((b) => {
     b.addEventListener('click', () => show(b.dataset.tab));
@@ -55,6 +87,7 @@ function bindTabs() {
 }
 
 async function boot() {
+  setTopFloor();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').then((reg) => {
       // The phone often resumes the app instead of relaunching it, so check for a new
@@ -71,6 +104,7 @@ async function boot() {
   await seedIfNeeded();
   initTimer();
   mountStatus(document.getElementById('sync-status'));
+  dockSyncStatus();
   bindTabs();
 
   // Pulled changes from another device refresh the screen unless the user is mid-edit.

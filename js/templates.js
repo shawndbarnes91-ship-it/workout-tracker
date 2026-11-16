@@ -2,7 +2,7 @@
 // set a default exercise, and group or ungroup supersets. Saved at once.
 
 import { save, saveMany } from './db.js';
-import { h, clear, openSheet, field, toast, confirmSheet, segmented, emptyNote, plural } from './util.js';
+import { h, clear, openSheet, field, toast, confirmSheet, segmented, emptyNote, plural, pageHead, icon } from './util.js';
 import { loadLifting, exercisesFor } from './lifting-data.js';
 import { TEMPLATE_A } from './seed.js';
 
@@ -16,16 +16,13 @@ export async function renderTemplates(root, onBack) {
   clear(root);
 
   root.append(
-    h('header', { class: 'page-head' },
-      h('button', { type: 'button', class: 'btn-text back', onclick: onBack }, '‹ Back'),
-      h('h1', null, 'Templates')
-    ),
+    pageHead({ title: 'Templates', back: onBack, backLabel: 'Workout' }),
     segmented(d.templates.map((t) => ({ value: t.id, label: `Workout ${t.name}` })), selectedTpl, (v) => { selectedTpl = v; rerender(); }),
     h('p', { class: 'muted small' }, 'Changes save immediately and apply to the next session.')
   );
 
-  const list = h('div', { class: 'stack' });
-  if (!slots.length) list.append(emptyNote('No slots yet. Add one below.'));
+  const list = h('div', { class: 'stack-lg' });
+  if (!slots.length) list.append(h('div', { class: 'card' }, emptyNote('No slots yet. Add one below.')));
   slots.forEach((slot, i) => {
     const cat = d.catById.get(slot.category_id);
     const def = slot.default_exercise_id ? d.exById.get(slot.default_exercise_id) : null;
@@ -33,31 +30,28 @@ export async function renderTemplates(root, onBack) {
     const next = slots[i + 1];
     const inGroup = slot.superset_group != null && ((prev && prev.superset_group === slot.superset_group) || (next && next.superset_group === slot.superset_group));
     const groupedWithNext = next && slot.superset_group != null && next.superset_group === slot.superset_group;
+    const name = cat ? cat.name : 'Missing category';
     list.append(
       h('div', { class: 'card slot-card' + (inGroup ? ' in-superset' : '') },
         h('div', { class: 'row' },
           h('div', { class: 'slot-num' }, String(i + 1)),
           h('div', { class: 'grow' },
-            h('div', { class: 'strong' }, cat ? cat.name : 'Missing category'),
+            h('div', { class: 'strong' }, name),
             h('div', { class: 'muted small' },
               `${plural(slot.sets || 1, inGroup ? 'round' : 'set')}${slot.target_reps ? ` × ${slot.target_reps} reps` : ''}`,
-              def ? ` · default: ${def.name}` : '',
               inGroup ? ' · superset' : ''),
+            def ? h('div', { class: 'muted small' }, `Default: ${def.name}`) : null,
             slot.note ? h('div', { class: 'muted small' }, slot.note) : null
-          )
+          ),
+          h('div', { class: 'move-btns' },
+            h('button', { type: 'button', class: 'icon-btn', disabled: i === 0, onclick: () => move(slots, i, -1).then(rerender), 'aria-label': `Move ${name} up` }, icon('up')),
+            h('button', { type: 'button', class: 'icon-btn', disabled: i === slots.length - 1, onclick: () => move(slots, i, 1).then(rerender), 'aria-label': `Move ${name} down` }, icon('down')))
         ),
-        h('div', { class: 'row gap wrap' },
-          h('button', { type: 'button', class: 'btn btn-secondary small-btn', disabled: i === 0, onclick: () => move(slots, i, -1).then(rerender), 'aria-label': 'Move up' }, '↑'),
-          h('button', { type: 'button', class: 'btn btn-secondary small-btn', disabled: i === slots.length - 1, onclick: () => move(slots, i, 1).then(rerender), 'aria-label': 'Move down' }, '↓'),
-          h('button', { type: 'button', class: 'btn btn-secondary small-btn', onclick: () => openSlotEditor(d, slot, rerender) }, 'Edit'),
-          next ? h('button', {
-            type: 'button',
-            class: 'btn btn-secondary small-btn',
-            onclick: () => (groupedWithNext ? ungroupFromNext(slots, i) : groupWithNext(slots, i)).then(rerender),
-          }, groupedWithNext ? 'Ungroup next' : 'Superset with next') : null,
+        h('div', { class: 'row gap' },
+          h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => openSlotEditor(d, slot, rerender) }, 'Edit'),
           h('button', {
             type: 'button',
-            class: 'btn btn-danger small-btn',
+            class: 'btn btn-danger grow',
             onclick: async () => {
               if (!(await confirmSheet(`Remove ${cat ? cat.name : 'this slot'} from the template? Logged history stays.`, 'Remove'))) return;
               await save('template_slots', { ...slot, deleted: true });
@@ -69,10 +63,18 @@ export async function renderTemplates(root, onBack) {
         )
       )
     );
+    // Between two cards: link or split them as a superset.
+    if (next) {
+      list.append(h('button', {
+        type: 'button',
+        class: 'link-btn' + (groupedWithNext ? ' linked' : ''),
+        onclick: () => (groupedWithNext ? ungroupFromNext(slots, i) : groupWithNext(slots, i)).then(rerender),
+      }, icon(groupedWithNext ? 'unlink' : 'link'), groupedWithNext ? `Split superset after ${i + 1}` : `Superset ${i + 1} with ${i + 2}`));
+    }
   });
   root.append(
     list,
-    h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => openSlotEditor(d, null, rerender) }, 'Add slot')
+    h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => openSlotEditor(d, null, rerender) }, icon('plus'), 'Add slot')
   );
 }
 

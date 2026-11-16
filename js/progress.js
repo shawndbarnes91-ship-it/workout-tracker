@@ -41,11 +41,14 @@ export async function renderProgress(container, onChange) {
   const latestBw = data.bodyweight[0];
 
   add(container,
+    latestBw ? h('div', null,
+      h('div', { class: 'stat-label' }, 'Latest bodyweight'),
+      h('div', { class: 'big-stat' }, `${fmtLb(latestBw.weight_lb)} lb`),
+      h('div', { class: 'muted small' }, fmtDay(latestBw.date))) : h('p', { class: 'muted small' }, 'No bodyweight yet. Log it any day, or with a weekly check-in.'),
     h('div', { class: 'row gap' },
       h('button', { type: 'button', class: 'btn btn-primary grow', onclick: () => openCheckin(data, onChange) }, 'Weekly check-in'),
       h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => openBodyweight(data, onChange) }, 'Log bodyweight')
-    ),
-    latestBw ? h('p', { class: 'muted small' }, `Latest bodyweight: ${fmtLb(latestBw.weight_lb)} lb on ${fmtDay(latestBw.date)}`) : null
+    )
   );
 
   // Compare view.
@@ -53,7 +56,7 @@ export async function renderProgress(container, onChange) {
     if (!dates.includes(compareA)) compareA = dates[dates.length - 1];
     if (!dates.includes(compareB)) compareB = dates[0];
     const sel = (value, onPick) => {
-      const s = h('select', { class: 'input', value }, dates.map((d) => h('option', { value: d }, fmtDay(d))));
+      const s = h('select', { class: 'input', value, 'aria-label': 'Check-in date' }, dates.map((d) => h('option', { value: d }, fmtDay(d))));
       s.addEventListener('change', () => { onPick(s.value); onChange(); });
       return s;
     };
@@ -73,10 +76,10 @@ export async function renderProgress(container, onChange) {
     const wb = weightOn(data.bodyweight, compareB);
     container.append(
       h('div', { class: 'section-label' }, 'Compare'),
-      h('div', { class: 'row gap' }, h('div', { class: 'grow' }, sel(compareA, (v) => { compareA = v; })), h('div', { class: 'grow' }, sel(compareB, (v) => { compareB = v; }))),
-      h('div', { class: 'row gap muted small' },
-        h('span', { class: 'grow center' }, wa != null ? `${fmtLb(wa)} lb` : 'No weight'),
-        h('span', { class: 'grow center' }, wb != null ? `${fmtLb(wb)} lb` : 'No weight')),
+      h('div', { class: 'compare-row' }, sel(compareA, (v) => { compareA = v; }), sel(compareB, (v) => { compareB = v; })),
+      h('div', { class: 'compare-row muted small num' },
+        h('span', { class: 'center' }, wa != null ? `${fmtLb(wa)} lb` : 'No weight'),
+        h('span', { class: 'center' }, wb != null ? `${fmtLb(wb)} lb` : 'No weight')),
       grid
     );
   }
@@ -90,7 +93,7 @@ export async function renderProgress(container, onChange) {
     container.append(
       h('div', { class: 'day-head' }, h('span', { class: 'grow' }, fmtDay(d)), h('span', { class: 'muted small' }, w != null ? `${fmtLb(w)} lb` : '')),
       h('div', { class: 'meal-grid' }, sortBy(ps, (p) => ANGLES.indexOf(p.angle)).map((p) =>
-        h('button', { type: 'button', class: 'meal-tile', onclick: () => openPhoto(p, onChange) },
+        h('button', { type: 'button', class: 'meal-tile', 'aria-label': `${angleLabel(p.angle)} photo, ${fmtDay(d)}`, onclick: () => openPhoto(p, onChange) },
           photoImg(p.photo_path, 'meal-thumb', `${p.angle} photo`),
           h('div', { class: 'meal-meta' }, h('span', null, angleLabel(p.angle))))))
     );
@@ -101,15 +104,15 @@ export async function renderProgress(container, onChange) {
   if (!data.bodyweight.length) container.append(emptyNote('No bodyweight entries yet.'));
   else {
     container.append(h('div', { class: 'card list' }, data.bodyweight.slice(0, 20).map((b) =>
-      h('button', { type: 'button', class: 'list-row', onclick: () => openBodyweight(data, onChange, b) },
-        h('span', { class: 'grow' }, fmtDay(b.date)), h('span', { class: 'strong' }, `${fmtLb(b.weight_lb)} lb`)))));
+      h('button', { type: 'button', class: 'list-row nav', onclick: () => openBodyweight(data, onChange, b) },
+        h('span', { class: 'grow' }, fmtDay(b.date)), h('span', { class: 'trail strong' }, `${fmtLb(b.weight_lb)} lb`)))));
   }
 }
 
 function openBodyweight(data, onChange, entry = null) {
   openSheet(entry ? 'Edit bodyweight' : 'Log bodyweight', (body, api) => {
     const date = h('input', { class: 'input', type: 'date', value: entry ? entry.date : todayStr() });
-    const w = h('input', { class: 'input big-input', type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'lb', value: entry ? entry.weight_lb : '' });
+    const w = h('input', { class: 'input big-input', type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'lb', 'aria-label': 'Bodyweight in pounds', value: entry ? entry.weight_lb : '' });
     add(body,
       field('Date', date),
       field('Weight (lb)', w),
@@ -145,7 +148,7 @@ function openCheckin(data, onChange) {
   const picked = {}; // angle -> { blob, url }
   openSheet('Weekly check-in', (body, api) => {
     const date = h('input', { class: 'input', type: 'date', value: todayStr() });
-    const w = h('input', { class: 'input big-input', type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'lb' });
+    const w = h('input', { class: 'input big-input', type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'lb', 'aria-label': 'Bodyweight in pounds' });
     const existing = data.bodyweight.find((b) => b.date === todayStr());
     if (existing) w.value = existing.weight_lb;
     const slotsWrap = h('div', { class: 'checkin-grid' });
@@ -156,8 +159,8 @@ function openCheckin(data, onChange) {
         slotsWrap.append(h('div', { class: 'checkin-slot' },
           h('div', { class: 'strong' }, angleLabel(angle)),
           p ? h('img', { class: 'meal-thumb', src: p.url, alt: `${angle} preview` }) : h('div', { class: 'meal-thumb photo-missing' }, 'No photo'),
-          h('button', { type: 'button', class: 'btn btn-secondary block small-btn', onclick: () => pick(angle, true) }, 'Take'),
-          h('button', { type: 'button', class: 'btn btn-secondary block small-btn', onclick: () => pick(angle, false) }, 'Choose')
+          h('button', { type: 'button', class: 'btn btn-secondary block small-btn', 'aria-label': `Take ${angle} photo`, onclick: () => pick(angle, true) }, 'Take'),
+          h('button', { type: 'button', class: 'btn btn-secondary block small-btn', 'aria-label': `Choose ${angle} photo`, onclick: () => pick(angle, false) }, 'Choose')
         ));
       }
     };
@@ -175,10 +178,8 @@ function openCheckin(data, onChange) {
     };
     drawSlots();
     body.append(
-      field('Date', date),
-      field('Bodyweight (lb)', w),
-      h('div', { class: 'field-label' }, 'Photos (one or more)'),
-      slotsWrap,
+      h('div', { class: 'two-col' }, field('Date', date), field('Bodyweight (lb)', w)),
+      h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Photos (one or more)'), slotsWrap),
       h('button', {
         type: 'button',
         class: 'btn btn-primary block',
@@ -208,7 +209,7 @@ function openCheckin(data, onChange) {
 }
 
 function openPhoto(p, onChange) {
-  openSheet(`${angleLabel(p.angle)} · ${fmtDay(p.checkin_date)}`, (body, api) => {
+  openSheet(`${angleLabel(p.angle)} photo`, (body, api) => {
     body.append(
       photoImg(p.photo_path, 'photo photo-preview', `${p.angle} photo`),
       h('button', {
@@ -223,5 +224,5 @@ function openPhoto(p, onChange) {
         },
       }, 'Delete photo')
     );
-  });
+  }, { subtitle: fmtDay(p.checkin_date) });
 }

@@ -6,7 +6,7 @@
 import { all, save, saveMany } from './db.js';
 import {
   h, add, clear, toast, openSheet, field, todayStr, parseDay, daysBetween, fmtDay, fmtTime,
-  nowISO, sortBy, ts, dayEndMs, emptyNote, confirmSheet,
+  nowISO, sortBy, ts, dayEndMs, emptyNote, confirmSheet, pageHead, icon,
 } from './util.js';
 
 export const SLOTS = ['Morning', 'Night', 'Pre-workout', 'Post-workout'];
@@ -86,16 +86,19 @@ const rerender = () => rootEl && render(rootEl);
 function renderToday(root, data) {
   const day = todayStr();
   root.append(
-    h('header', { class: 'page-head' },
-      h('div', { class: 'grow' }, h('h1', null, 'Supplements'), h('div', { class: 'muted small' }, fmtDay(day))),
-      h('button', { type: 'button', class: 'btn btn-secondary', onclick: () => { view = 'manage'; rerender(); } }, 'Manage')
-    )
+    pageHead({
+      title: 'Supplements',
+      sub: fmtDay(day),
+      actions: [h('button', { type: 'button', class: 'btn btn-secondary btn-head', onclick: () => { view = 'manage'; rerender(); } }, 'Manage')],
+    })
   );
   const active = data.supps.filter((s) => !s.archived && !s.paused);
   if (!active.length) {
     root.append(
-      emptyNote('No active supplements yet.'),
-      h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => openEditor(data, null) }, 'Add supplement')
+      h('div', { class: 'card' },
+        h('div', { class: 'card-title' }, 'No active supplements'),
+        h('p', { class: 'muted small' }, 'Add what you take and when. Tap each one as you take it; history keeps every dose change.'),
+        h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => openEditor(data, null) }, icon('plus'), 'Add supplement'))
     );
     return;
   }
@@ -126,23 +129,24 @@ function renderToday(root, data) {
           rerender();
         },
       },
-      h('span', { class: 'check-box' }, isTaken ? '✓' : ''),
-      h('span', { class: 'grow' }, h('span', { class: 'strong' }, s.name), h('span', { class: 'muted' }, ` · ${doseText(v, s)}`)),
-      isTaken ? h('span', { class: 'muted small' }, fmtTime(logs[0].taken_at)) : null));
+      h('span', { class: 'check-box' }, isTaken ? icon('check') : null),
+      h('span', { class: 'grow' }, h('span', { class: 'row-title strong' }, s.name), h('span', { class: 'row-sub' }, doseText(v, s))),
+      isTaken ? h('span', { class: 'trail' }, fmtTime(logs[0].taken_at)) : null));
     }
     root.append(list);
   }
-  if (!shown) root.append(emptyNote('Nothing scheduled today.'));
-  else root.insertBefore(h('p', { class: 'muted small' }, `${taken} of ${shown} taken`), root.children[1]);
+  if (!shown) root.append(h('div', { class: 'card' }, emptyNote('Nothing scheduled today.')));
+  else {
+    root.insertBefore(h('div', { class: 'progress-line' },
+      h('div', { class: 'progress-track' }, h('div', { class: 'progress-fill', style: { width: `${Math.round((taken / shown) * 100)}%` } })),
+      h('span', { class: 'muted small num' }, `${taken} of ${shown} taken`)), root.children[1]);
+  }
 }
 
 function renderManage(root, data) {
   root.append(
-    h('header', { class: 'page-head' },
-      h('button', { type: 'button', class: 'btn-text back', onclick: () => { view = 'today'; rerender(); } }, '‹ Today'),
-      h('h1', null, 'Manage')
-    ),
-    h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => openEditor(data, null) }, 'Add supplement')
+    pageHead({ title: 'Manage', back: () => { view = 'today'; rerender(); }, backLabel: 'Today' }),
+    h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => openEditor(data, null) }, icon('plus'), 'Add supplement')
   );
   const groups = [
     ['Active', data.supps.filter((s) => !s.archived && !s.paused)],
@@ -154,13 +158,12 @@ function renderManage(root, data) {
     root.append(h('div', { class: 'section-label' }, label));
     root.append(h('div', { class: 'card list' }, list.map((s) => {
       const v = versionOn(data, s.id, todayStr()) || (data.vBySupp.get(s.id) || [])[0];
-      return h('button', { type: 'button', class: 'list-row', onclick: () => openEditor(data, s) },
-        h('span', { class: 'grow' }, h('span', { class: 'strong' }, s.name),
-          v ? h('span', { class: 'muted small block-text' }, `${doseText(v, s)} · ${scheduleText(v)} · ${slotsOf(v).join(', ')}`) : null),
-        h('span', { class: 'muted small' }, 'Edit'));
+      return h('button', { type: 'button', class: 'list-row nav', 'data-multiline': '', onclick: () => openEditor(data, s) },
+        h('span', { class: 'grow' }, h('span', { class: 'row-title strong' }, s.name),
+          v ? h('span', { class: 'row-sub' }, `${doseText(v, s)} · ${scheduleText(v)} · ${slotsOf(v).join(', ')}`) : null));
     })));
   }
-  if (!data.supps.length) root.append(emptyNote('No supplements yet.'));
+  if (!data.supps.length) root.append(h('div', { class: 'card' }, emptyNote('No supplements yet.')));
 }
 
 function openEditor(data, supp) {
@@ -169,8 +172,8 @@ function openEditor(data, supp) {
   const sched = { type: 'daily', n: 2, start: todayStr(), days: [], ...(current ? schedOf(current) : {}) };
   const chosenSlots = new Set(current ? slotsOf(current) : ['Morning']);
 
-  openSheet(isNew ? 'Add supplement' : supp.name, (body, api) => {
-    const name = h('input', { class: 'input', type: 'text', value: supp ? supp.name : '', placeholder: 'Name', autocomplete: 'off' });
+  openSheet(isNew ? 'Add supplement' : 'Edit supplement', (body, api) => {
+    const name = h('input', { class: 'input', type: 'text', value: supp ? supp.name : '', placeholder: 'Name', autocomplete: 'off', maxlength: '40' });
     const dose = h('input', { class: 'input', type: 'text', inputmode: 'decimal', value: current ? current.dose : '', placeholder: 'Dose' });
     const unit = h('input', { class: 'input', type: 'text', value: supp ? supp.unit || '' : '', placeholder: 'mg, mcg, IU, capsules', list: 'unit-list' });
     const unitList = h('datalist', { id: 'unit-list' }, ['mg', 'mcg', 'g', 'IU', 'capsules', 'tablets', 'scoops', 'ml'].map((u) => h('option', { value: u })));
@@ -206,7 +209,7 @@ function openEditor(data, supp) {
 
     add(body,
       field('Name', name),
-      h('div', { class: 'row gap' }, h('div', { class: 'grow' }, field('Dose', dose)), h('div', { class: 'grow' }, field('Unit', unit))),
+      h('div', { class: 'two-col' }, field('Dose', dose), field('Unit', unit)),
       unitList,
       field('Schedule', typeSel),
       everyN,
@@ -278,23 +281,23 @@ function openEditor(data, supp) {
 function openHistory(data, supp) {
   const versions = [...(data.vBySupp.get(supp.id) || [])].reverse();
   const logs = sortBy(data.logs.filter((l) => l.supplement_id === supp.id), (l) => l.date + (l.taken_at || ''), true).slice(0, 90);
-  openSheet(`${supp.name} history`, (body) => {
+  openSheet('History', (body) => {
     body.append(
       h('div', { class: 'section-label' }, 'Dose and schedule changes'),
       versions.length
-        ? h('div', { class: 'list' }, versions.map((v) => h('div', { class: 'list-row static' },
-          h('span', { class: 'grow' }, fmtDay(v.effective_from)),
-          h('span', { class: 'muted small right' }, `${doseText(v, supp)} · ${scheduleText(v)} · ${slotsOf(v).join(', ')}`))))
+        ? h('div', { class: 'list card' }, versions.map((v) => h('div', { class: 'list-row static' },
+          h('span', { class: 'grow' }, h('span', { class: 'row-title' }, fmtDay(v.effective_from)),
+            h('span', { class: 'row-sub' }, `${doseText(v, supp)} · ${scheduleText(v)} · ${slotsOf(v).join(', ')}`)))))
         : emptyNote('No entries.'),
       h('div', { class: 'section-label' }, 'Taken'),
       logs.length
-        ? h('div', { class: 'list' }, logs.map((l) => {
+        ? h('div', { class: 'list card' }, logs.map((l) => {
           const v = versionOn(data, supp.id, l.date);
           return h('div', { class: 'list-row static' },
-            h('span', { class: 'grow' }, `${fmtDay(l.date)} · ${l.slot}`),
-            h('span', { class: 'muted small' }, `${v ? doseText(v, supp) : 'Dose unknown'}${l.taken_at ? ` at ${fmtTime(l.taken_at)}` : ''}`));
+            h('span', { class: 'grow' }, h('span', { class: 'row-title' }, fmtDay(l.date)), h('span', { class: 'row-sub' }, l.slot)),
+            h('span', { class: 'trail' }, `${v ? doseText(v, supp) : 'Dose unknown'}${l.taken_at ? ` · ${fmtTime(l.taken_at)}` : ''}`));
         }))
         : emptyNote('Nothing logged yet.')
     );
-  });
+  }, { subtitle: supp.name });
 }

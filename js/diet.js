@@ -2,7 +2,7 @@
 // Shows today's on-plan percentage and the current on-plan streak.
 
 import { all, save } from './db.js';
-import { h, clear, toast, openSheet, confirmSheet, pickImage, uuid, nowISO, dateStr, fmtDay, fmtTime, sortBy, ts, emptyNote, plural } from './util.js';
+import { h, clear, toast, openSheet, confirmSheet, pickImage, uuid, nowISO, dateStr, fmtDay, fmtTime, sortBy, ts, emptyNote, plural, pageHead, icon } from './util.js';
 import { compressImage, storePhoto, mealPhotoPath, photoImg, deletePhoto } from './photos.js';
 
 let rootEl = null;
@@ -24,14 +24,14 @@ export async function render(root) {
   }
 
   root.append(
-    h('header', { class: 'page-head' }, h('h1', null, 'Diet')),
+    pageHead({ title: 'Diet' }),
     h('div', { class: 'card two-col' },
       h('div', null,
-        h('div', { class: 'muted small' }, 'Today on plan'),
+        h('div', { class: 'stat-label' }, 'Today on plan'),
         h('div', { class: 'big-stat' }, pct == null ? '-' : `${pct}%`),
         h('div', { class: 'muted small' }, todays.length ? `${onToday} of ${plural(todays.length, 'meal')}` : 'No meals yet today')),
       h('div', null,
-        h('div', { class: 'muted small' }, 'On-plan streak'),
+        h('div', { class: 'stat-label' }, 'On-plan streak'),
         h('div', { class: 'big-stat' }, String(streak)),
         h('div', { class: 'muted small' }, streak === 1 ? 'meal in a row' : 'meals in a row'))
     )
@@ -41,6 +41,7 @@ export async function render(root) {
     root.append(
       h('div', { class: 'card stack' },
         pending.url ? h('img', { class: 'photo photo-preview', src: pending.url, alt: 'Meal photo' }) : h('div', { class: 'photo photo-missing' }, 'No photo'),
+        h('div', { class: 'section-label' }, 'Was this meal on plan?'),
         h('div', { class: 'row gap' },
           h('button', { type: 'button', class: 'btn btn-primary grow btn-tall', onclick: () => logMeal(true) }, 'On Plan'),
           h('button', { type: 'button', class: 'btn btn-secondary grow btn-tall', onclick: () => logMeal(false) }, 'Off Plan')
@@ -51,8 +52,9 @@ export async function render(root) {
   } else {
     root.append(
       h('div', { class: 'card stack' },
-        h('button', { type: 'button', class: 'btn btn-primary block btn-tall', onclick: () => choose(true) }, 'Take photo'),
-        h('button', { type: 'button', class: 'btn btn-secondary block', onclick: () => choose(false) }, 'Choose photo'),
+        h('div', { class: 'section-label' }, 'Log a meal'),
+        h('button', { type: 'button', class: 'btn btn-primary block btn-tall', onclick: () => choose(true) }, icon('camera'), 'Take photo'),
+        h('button', { type: 'button', class: 'btn btn-secondary block', onclick: () => choose(false) }, icon('image'), 'Choose photo'),
         h('button', { type: 'button', class: 'btn-text block', onclick: () => { pending = { blob: null, url: null }; render(root); } }, 'Log without a photo')
       )
     );
@@ -60,7 +62,7 @@ export async function render(root) {
 
   root.append(h('div', { class: 'section-label' }, 'Recent meals'));
   if (!meals.length) {
-    root.append(emptyNote('No meals logged yet.'));
+    root.append(h('div', { class: 'card' }, emptyNote('No meals logged yet. Snap a photo, then tap On Plan or Off Plan.')));
     return;
   }
   const byDay = new Map();
@@ -72,7 +74,7 @@ export async function render(root) {
   for (const [day, list] of byDay) {
     const on = list.filter((m) => m.on_plan).length;
     root.append(
-      h('div', { class: 'day-head' }, h('span', { class: 'grow' }, fmtDay(day)), h('span', { class: 'muted small' }, `${Math.round((on / list.length) * 100)}% on plan`)),
+      h('div', { class: 'day-head' }, h('span', { class: 'grow' }, fmtDay(day)), h('span', { class: 'muted small num' }, `${Math.round((on / list.length) * 100)}% on plan`)),
       h('div', { class: 'meal-grid' }, list.map((m) => mealTile(m)))
     );
   }
@@ -80,8 +82,8 @@ export async function render(root) {
 
 function mealTile(m) {
   const hasPhoto = m.photo_path && !m.photo_deleted_at;
-  return h('button', { type: 'button', class: 'meal-tile', onclick: () => openMeal(m) },
-    hasPhoto ? photoImg(m.photo_path, 'meal-thumb', 'Meal photo') : h('div', { class: 'meal-thumb photo-missing' }, m.photo_deleted_at ? 'Photo removed after 30 days' : 'No photo'),
+  return h('button', { type: 'button', class: 'meal-tile', 'aria-label': `Meal at ${fmtTime(m.logged_at)}, ${m.on_plan ? 'on plan' : 'off plan'}`, onclick: () => openMeal(m) },
+    hasPhoto ? photoImg(m.photo_path, 'meal-thumb', 'Meal photo') : h('div', { class: 'meal-thumb photo-missing' }, m.photo_deleted_at ? 'Photo removed' : 'No photo'),
     h('div', { class: 'meal-meta' }, h('span', null, fmtTime(m.logged_at)), h('span', { class: m.on_plan ? 'tag tag-on' : 'tag tag-off' }, m.on_plan ? 'On plan' : 'Off plan'))
   );
 }
@@ -119,7 +121,7 @@ async function logMeal(onPlan) {
 }
 
 function openMeal(m) {
-  openSheet(`${fmtDay(m.logged_at)} · ${fmtTime(m.logged_at)}`, (body, api) => {
+  openSheet('Meal', (body, api) => {
     const hasPhoto = m.photo_path && !m.photo_deleted_at;
     body.append(
       hasPhoto ? photoImg(m.photo_path, 'photo photo-preview', 'Meal photo') : h('p', { class: 'muted' }, m.photo_deleted_at ? 'The photo was removed after 30 days. The record stays.' : 'No photo.'),
@@ -148,5 +150,5 @@ function openMeal(m) {
         },
       }, 'Delete meal')
     );
-  });
+  }, { subtitle: `${fmtDay(m.logged_at)} · ${fmtTime(m.logged_at)}` });
 }

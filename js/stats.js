@@ -5,7 +5,7 @@
 import { all } from './db.js';
 import {
   h, clear, segmented, field, ACCENT, DAY_MS, dateStr, todayStr, addDays, startOfWeek, dayStartMs, dayEndMs,
-  fmtShortDay, fmtDay, fmtTime, fmtPace, round1, round2, e1rm, ts, sortBy, emptyNote, pad2, plural,
+  fmtShortDay, fmtDay, fmtTime, fmtPace, round1, round2, e1rm, ts, sortBy, emptyNote, pad2, plural, pageHead,
 } from './util.js';
 import { loadLifting, muscleGroupOfSet, sessionsWithSets } from './lifting-data.js';
 import { loadSupplements, doseText } from './supplements.js';
@@ -42,8 +42,8 @@ const rerender = () => {
 function setChartDefaults() {
   if (defaultsSet || !window.Chart) return;
   const C = window.Chart;
-  C.defaults.color = '#bdbdbd';
-  C.defaults.borderColor = '#1f1f1f';
+  C.defaults.color = '#a1a1a6';
+  C.defaults.borderColor = '#232327';
   C.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   C.defaults.font.size = 12;
   C.defaults.animation = false;
@@ -138,7 +138,11 @@ function canvasIn(card, height = 220) {
   return canvas;
 }
 
+// A newer render started while this one was waiting: stop, so the page is never drawn twice.
+let renderGen = 0;
+
 export async function render(root) {
+  const gen = ++renderGen;
   rootEl = root;
   // Older builds offered 24h and 90d; anything not on the picker falls back to 30 days.
   if (!RANGES.some((x) => x.value === rangeKey)) rangeKey = DEFAULT_RANGE;
@@ -149,6 +153,7 @@ export async function render(root) {
   const [d, runs, meals, bodyweight, supp] = await Promise.all([
     loadLifting(), all('runs'), all('meals'), all('bodyweight'), loadSupplements(),
   ]);
+  if (gen !== renderGen) return;
   const earliestCandidates = [
     ...d.sessions.map((s) => ts(s.started_at)),
     ...meals.map((m) => ts(m.logged_at)),
@@ -161,24 +166,25 @@ export async function render(root) {
   const weeks = spanDays / 7;
 
   clear(root);
-  root.append(h('header', { class: 'page-head' }, h('h1', null, 'Stats')));
+  root.append(pageHead({ title: 'Stats' }));
 
   /* ----- Progress (check-in first) ----- */
   const progress = h('div', { class: 'stack' });
   root.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Progress'), progress));
   await renderProgress(progress, rerender);
+  if (gen !== renderGen) return;
 
   // Range picker (sticky).
   const picker = h('div', { class: 'range-picker' },
     segmented(RANGES, rangeKey, (v) => { rangeKey = v; rerender(); }, 'seg-small'));
   if (rangeKey === 'custom') {
-    const from = h('input', { class: 'input', type: 'date', value: customFrom || dateStr(addDays(new Date(), -30)) });
-    const to = h('input', { class: 'input', type: 'date', value: customTo || todayStr() });
+    const from = h('input', { class: 'input', type: 'date', 'aria-label': 'From', value: customFrom || dateStr(addDays(new Date(), -30)) });
+    const to = h('input', { class: 'input', type: 'date', 'aria-label': 'To', value: customTo || todayStr() });
     from.addEventListener('change', () => { customFrom = from.value; rerender(); });
     to.addEventListener('change', () => { customTo = to.value; rerender(); });
-    picker.append(h('div', { class: 'row gap' }, h('div', { class: 'grow' }, field('From', from)), h('div', { class: 'grow' }, field('To', to))));
+    picker.append(h('div', { class: 'two-col' }, field('From', from), field('To', to)));
   }
-  root.append(picker, h('p', { class: 'muted small center' }, `${fmtDay(r.start)} to ${fmtDay(r.end)}`));
+  root.append(picker, h('p', { class: 'muted small center range-text' }, `${fmtDay(r.start)} to ${fmtDay(r.end)}`));
 
   /* ----- Consistency ----- */
   const mealsIn = meals.filter((m) => inTs(r, m.logged_at));
@@ -191,11 +197,11 @@ export async function render(root) {
       h('div', { class: 'card-title' }, 'Consistency'),
       h('div', { class: 'two-col' },
         h('div', null,
-          h('div', { class: 'muted small' }, 'Diet on plan'),
+          h('div', { class: 'stat-label' }, 'Diet on plan'),
           h('div', { class: 'big-stat' }, dietPct == null ? '-' : `${dietPct}%`),
           h('div', { class: 'muted small' }, mealsIn.length ? `${onPlan} of ${plural(mealsIn.length, 'meal')}` : 'No meals in range')),
         h('div', null,
-          h('div', { class: 'muted small' }, 'Training'),
+          h('div', { class: 'stat-label' }, 'Training'),
           h('div', { class: 'big-stat' }, plural(sessionsIn.length, 'session')),
           h('div', { class: 'muted small' }, `Goal ${TARGET_PER_WEEK} a week, so ${expected} in this range`))
       )
@@ -212,7 +218,7 @@ export async function render(root) {
   if (!exList.includes(strengthEx)) strengthEx = exList[0] || null;
   root.append(chartCard('Strength over time', 'Estimated one-rep max (Epley). PRs are highlighted.', (card) => {
     if (!exList.length) return card.append(emptyNote('Log some sets to see strength trends.'));
-    const sel = h('select', { class: 'input', value: strengthEx }, exList.map((id) => h('option', { value: id }, d.exById.get(id).name)));
+    const sel = h('select', { class: 'input', value: strengthEx, 'aria-label': 'Exercise' }, exList.map((id) => h('option', { value: id }, d.exById.get(id).name)));
     sel.addEventListener('change', () => { strengthEx = sel.value; rerender(); });
     card.append(sel);
     // Best e1RM per session over all history, so PR marks are true all-time records.
