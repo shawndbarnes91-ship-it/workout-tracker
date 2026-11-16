@@ -2,7 +2,7 @@
 // set a default exercise, and group or ungroup supersets. Saved at once.
 
 import { save, saveMany } from './db.js';
-import { h, clear, openSheet, field, toast, confirmSheet, segmented, emptyNote } from './util.js';
+import { h, clear, openSheet, field, toast, confirmSheet, segmented, emptyNote, plural } from './util.js';
 import { loadLifting, exercisesFor } from './lifting-data.js';
 import { TEMPLATE_A } from './seed.js';
 
@@ -40,7 +40,7 @@ export async function renderTemplates(root, onBack) {
           h('div', { class: 'grow' },
             h('div', { class: 'strong' }, cat ? cat.name : 'Missing category'),
             h('div', { class: 'muted small' },
-              `${slot.sets} ${inGroup ? 'rounds' : 'sets'}${slot.target_reps ? ` × ${slot.target_reps} reps` : ''}`,
+              `${plural(slot.sets || 1, inGroup ? 'round' : 'set')}${slot.target_reps ? ` × ${slot.target_reps} reps` : ''}`,
               def ? ` · default: ${def.name}` : '',
               inGroup ? ' · superset' : ''),
             slot.note ? h('div', { class: 'muted small' }, slot.note) : null
@@ -146,7 +146,7 @@ function openSlotEditor(d, slot, onDone) {
     const note = h('input', { class: 'input', type: 'text', value: s.note || '', placeholder: 'Optional note' });
     body.append(
       field('Category', cat),
-      field('Default exercise', defEx, 'Used the first time. After that the last exercise used in this slot is picked.'),
+      field('Default exercise', defEx, 'Every session starts with this one. With None, the last exercise used here is picked. A swap during a workout counts for that day only.'),
       field('Sets (or rounds in a superset)', sets),
       field('Target reps', reps, 'When the top set reaches this, the cue says "Add weight today."'),
       field('Note', note),

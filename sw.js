@@ -1,8 +1,10 @@
 // Service worker. Every path is relative so the app works from a GitHub Pages
-// project subpath. Caches the app shell and the pinned CDN libraries so the app
-// opens offline. Bump VERSION whenever app files change.
+// project subpath. App files (html, js, css, manifest) are network first, so a
+// deploy shows up on the next launch; the cached copy is used when offline. The
+// pinned CDN libraries are cache first. Bump VERSION whenever app files change.
 
-const VERSION = 'v1';
+const VERSION = 'v2';
+const NETWORK_TIMEOUT_MS = 4000; // slow gym signal: fall back to the cached copy
 const SHELL_CACHE = `wt-shell-${VERSION}`;
 const CDN_CACHE = 'wt-cdn-v1';
 const PHOTO_CACHE = 'wt-photos';
@@ -67,15 +69,27 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k.startsWith('wt-shell-') && k !== SHELL_CACHE).map((k) => caches.delete(k)));
+    const keep = new Set([SHELL_CACHE, CDN_CACHE, PHOTO_CACHE]);
+    await Promise.all(keys.filter((k) => k.startsWith('wt-') && !keep.has(k)).map((k) => caches.delete(k)));
     await self.clients.claim();
   })());
 });
 
+/** Fetch that skips the HTTP cache's stale copy (revalidates) and gives up after a timeout. */
+function freshFetch(url) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), NETWORK_TIMEOUT_MS);
+    fetch(url, { cache: 'no-cache', credentials: 'same-origin' }).then(
+      (res) => { clearTimeout(timer); resolve(res); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
 async function networkFirstPage(request) {
   const cache = await caches.open(SHELL_CACHE);
   try {
-    const res = await fetch(request);
+    const res = await freshFetch(request.url);
     if (res.ok) cache.put('./index.html', res.clone());
     return res;
   } catch (e) {
@@ -83,18 +97,19 @@ async function networkFirstPage(request) {
   }
 }
 
-async function staleWhileRevalidate(request) {
+/** App code: network first so deploys are picked up; the cached copy keeps it working offline. */
+async function networkFirst(request) {
   const cache = await caches.open(SHELL_CACHE);
-  const cached = await cache.match(request, { ignoreSearch: true });
-  const network = fetch(request)
-    .then((res) => {
-      if (res.ok) cache.put(request, res.clone());
+  try {
+    const res = await freshFetch(request.url);
+    if (res.ok) {
+      cache.put(request, res.clone());
       return res;
-    })
-    .catch(() => null);
-  if (cached) return cached;
-  const res = await network;
-  return res || Response.error();
+    }
+    return (await cache.match(request, { ignoreSearch: true })) || res;
+  } catch (e) {
+    return (await cache.match(request, { ignoreSearch: true })) || Response.error();
+  }
 }
 
 async function cacheFirst(request, cacheName) {
@@ -120,7 +135,7 @@ self.addEventListener('fetch', (event) => {
       event.respondWith(networkFirstPage(req));
       return;
     }
-    event.respondWith(staleWhileRevalidate(req));
+    event.respondWith(networkFirst(req));
     return;
   }
   if (CDN_HOSTS.includes(url.hostname)) {

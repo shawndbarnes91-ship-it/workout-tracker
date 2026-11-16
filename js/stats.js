@@ -1,14 +1,14 @@
-// Stats tab. One time-range picker at the top drives every chart and percentage:
-// Last 24 hours, 7 days, 30 days, 90 days, All time, or a custom date range.
-// Also holds the Progress section (photos and bodyweight) and Export.
+// Stats tab. Opens with the Progress section (check-in, bodyweight, photos), then
+// one time-range picker that drives every chart and percentage below it:
+// 7 days, 30 days, All time, or a custom date range. Data (sync, export) is last.
 
 import { all } from './db.js';
 import {
   h, clear, segmented, field, ACCENT, DAY_MS, dateStr, todayStr, addDays, startOfWeek, dayStartMs, dayEndMs,
-  fmtShortDay, fmtDay, fmtTime, fmtPace, round1, round2, e1rm, ts, sortBy, emptyNote, pad2,
+  fmtShortDay, fmtDay, fmtTime, fmtPace, round1, round2, e1rm, ts, sortBy, emptyNote, pad2, plural,
 } from './util.js';
 import { loadLifting, muscleGroupOfSet, sessionsWithSets } from './lifting-data.js';
-import { loadSupplements } from './supplements.js';
+import { loadSupplements, doseText } from './supplements.js';
 import { runPace, runPrIds } from './prs.js';
 import { PRIORITY_GROUPS } from './seed.js';
 import { renderProgress } from './progress.js';
@@ -16,17 +16,16 @@ import { exportAll } from './export.js';
 import { configured, getState, syncNow } from './sync.js';
 
 const RANGES = [
-  { value: '24h', label: '24h' },
   { value: '7d', label: '7d' },
   { value: '30d', label: '30d' },
-  { value: '90d', label: '90d' },
   { value: 'all', label: 'All' },
   { value: 'custom', label: 'Custom' },
 ];
+const DEFAULT_RANGE = '30d';
 const TARGET_PER_WEEK = 3;
 const GREY = '#6b6b6b';
 
-let rangeKey = '30d';
+let rangeKey = DEFAULT_RANGE;
 let customFrom = null;
 let customTo = null;
 let strengthEx = null;
@@ -56,10 +55,8 @@ function setChartDefaults() {
 function bounds(earliest) {
   const now = Date.now();
   switch (rangeKey) {
-    case '24h': return { start: now - DAY_MS, end: now };
     case '7d': return { start: now - 7 * DAY_MS, end: now };
     case '30d': return { start: now - 30 * DAY_MS, end: now };
-    case '90d': return { start: now - 90 * DAY_MS, end: now };
     case 'all': return { start: Math.min(earliest || now, now - DAY_MS), end: now };
     case 'custom': {
       const f = customFrom || dateStr(addDays(new Date(), -30));
@@ -143,6 +140,8 @@ function canvasIn(card, height = 220) {
 
 export async function render(root) {
   rootEl = root;
+  // Older builds offered 24h and 90d; anything not on the picker falls back to 30 days.
+  if (!RANGES.some((x) => x.value === rangeKey)) rangeKey = DEFAULT_RANGE;
   charts.forEach((c) => c.destroy());
   charts = [];
   setChartDefaults();
@@ -164,6 +163,11 @@ export async function render(root) {
   clear(root);
   root.append(h('header', { class: 'page-head' }, h('h1', null, 'Stats')));
 
+  /* ----- Progress (check-in first) ----- */
+  const progress = h('div', { class: 'stack' });
+  root.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Progress'), progress));
+  await renderProgress(progress, rerender);
+
   // Range picker (sticky).
   const picker = h('div', { class: 'range-picker' },
     segmented(RANGES, rangeKey, (v) => { rangeKey = v; rerender(); }, 'seg-small'));
@@ -181,8 +185,7 @@ export async function render(root) {
   const onPlan = mealsIn.filter((m) => m.on_plan).length;
   const dietPct = mealsIn.length ? Math.round((onPlan / mealsIn.length) * 100) : null;
   const sessionsIn = sessionsWithSets(d).filter((s) => inTs(r, s.started_at));
-  const target = TARGET_PER_WEEK * weeks;
-  const trainPct = target > 0 ? Math.round((sessionsIn.length / target) * 100) : 0;
+  const expected = Math.max(1, Math.round(TARGET_PER_WEEK * weeks));
   root.append(
     h('div', { class: 'card' },
       h('div', { class: 'card-title' }, 'Consistency'),
@@ -190,11 +193,11 @@ export async function render(root) {
         h('div', null,
           h('div', { class: 'muted small' }, 'Diet on plan'),
           h('div', { class: 'big-stat' }, dietPct == null ? '-' : `${dietPct}%`),
-          h('div', { class: 'muted small' }, mealsIn.length ? `${onPlan} of ${mealsIn.length} meals` : 'No meals in range')),
+          h('div', { class: 'muted small' }, mealsIn.length ? `${onPlan} of ${plural(mealsIn.length, 'meal')}` : 'No meals in range')),
         h('div', null,
           h('div', { class: 'muted small' }, 'Training'),
-          h('div', { class: 'big-stat' }, `${sessionsIn.length} / ${round1(target)}`),
-          h('div', { class: 'muted small' }, `sessions vs 3 per week (${trainPct}%)`))
+          h('div', { class: 'big-stat' }, plural(sessionsIn.length, 'session')),
+          h('div', { class: 'muted small' }, `Goal ${TARGET_PER_WEEK} a week, so ${expected} in this range`))
       )
     )
   );
@@ -381,7 +384,7 @@ export async function render(root) {
     const markers = sortBy(supp.versions.filter((v) => inTs(r, v.effective_from) && suppById.has(v.supplement_id)), (v) => ts(v.effective_from))
       .map((v) => {
         const s = suppById.get(v.supplement_id);
-        return { x: ts(v.effective_from), label: `${s.name} ${v.dose}${s.unit ? ' ' + s.unit : ''}`, when: v.effective_from };
+        return { x: ts(v.effective_from), label: `${s.name} ${doseText(v, s)}`, when: v.effective_from };
       });
     if (!bwIn.length) card.append(emptyNote('No bodyweight entries in this range.'));
     else {
@@ -413,11 +416,6 @@ export async function render(root) {
       card.append(h('div', { class: 'marker-list' }, markers.map((m) => h('div', { class: 'muted small' }, `${fmtShortDay(m.when)}: ${m.label}`))));
     }
   }));
-
-  /* ----- Progress ----- */
-  const progress = h('div', { class: 'stack' });
-  root.append(h('div', { class: 'card' }, h('div', { class: 'card-title' }, 'Progress'), progress));
-  await renderProgress(progress, rerender);
 
   /* ----- Data ----- */
   const st = getState();

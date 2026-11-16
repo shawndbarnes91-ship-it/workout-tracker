@@ -195,6 +195,9 @@ p { margin: 0; }
 .small-btn { min-height: var(--tap); padding: 8px 12px; font-size: 15px; }
 .btn-tall { min-height: 64px; font-size: 19px; }
 .btn-log { min-height: 64px; font-size: 20px; }
+/* Buttons side by side share one height, even when one label wraps. */
+.row > .btn, .row > .chip-btn { align-self: stretch; }
+.row > .btn.grow { padding-left: 10px; padding-right: 10px; line-height: 1.2; }
 
 /* ---------- segmented ---------- */
 .segmented {
@@ -303,18 +306,6 @@ input[type="date"].input { min-height: var(--tap); }
   font-weight: 650;
 }
 .slot-card.in-superset { border-left: 3px solid #ffffff; }
-.slot-nav { display: flex; align-items: center; gap: 8px; }
-.nav-btn {
-  width: var(--tap);
-  height: var(--tap);
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--card-2);
-  color: var(--fg);
-  font-size: 28px;
-  cursor: pointer;
-}
-.nav-btn:disabled { opacity: 0.3; }
 .slot-strip { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0; }
 .slot-dot {
   flex: none;
@@ -330,6 +321,10 @@ input[type="date"].input { min-height: var(--tap); }
 }
 .slot-dot.done { color: var(--fg); background: var(--card-2); }
 .slot-dot.current { border-color: var(--fg); color: var(--fg); border-width: 2px; }
+.slot-dot.skipped { opacity: 0.45; text-decoration: line-through; }
+.target-row { display: flex; align-items: center; gap: 10px; }
+.step-btn-small { height: var(--tap); font-size: 22px; }
+.step-btn:disabled { opacity: 0.3; cursor: default; }
 .member-tabs { display: flex; gap: 6px; }
 .member-tab {
   flex: 1 1 0;

@@ -2,7 +2,7 @@
 // picker used by "Add Exercise" during a session.
 
 import { save, saveMany, remove } from './db.js';
-import { h, clear, openSheet, field, toast, confirmSheet, emptyNote } from './util.js';
+import { h, add, clear, openSheet, field, toast, confirmSheet, emptyNote } from './util.js';
 import { loadLifting, LOAD_TYPES } from './lifting-data.js';
 import { MUSCLE_GROUPS } from './seed.js';
 
@@ -39,8 +39,8 @@ export async function renderLibrary(root, onBack) {
               h('span', { class: 'muted small' }, ex.load_type))
             ) : emptyNote('No exercises yet.'),
             h('div', { class: 'row gap' },
-              h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => openExerciseEditor({ presetCategoryId: cat.id, data: d, onSaved: rerender }) }, 'Add exercise here'),
-              h('button', { type: 'button', class: 'btn btn-secondary', onclick: () => openCategoryEditor({ category: cat, data: d, onSaved: rerender }) }, 'Edit category')
+              h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => openExerciseEditor({ presetCategoryId: cat.id, data: d, onSaved: rerender }) }, 'Add exercise'),
+              h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => openCategoryEditor({ category: cat, data: d, onSaved: rerender }) }, 'Edit category')
             )
           )
         )
@@ -93,7 +93,7 @@ export async function openExerciseEditor({ exercise = null, presetCategoryId = n
       return { cb, row: h('label', { class: 'check-row' }, cb, h('span', null, c.name)) };
     });
 
-    body.append(
+    add(body,
       field('Name', name),
       field('Load type', load),
       barField,
@@ -150,7 +150,7 @@ export async function openCategoryEditor({ category = null, data = null, onSaved
     const group = h('input', { class: 'input', type: 'text', value: cat.muscle_group || '', list: listId, placeholder: 'Muscle group' });
     const dl = h('datalist', { id: listId }, MUSCLE_GROUPS.map((g) => h('option', { value: g })));
     const inUse = category ? d.slots.some((s) => s.category_id === category.id) : false;
-    body.append(
+    add(body,
       field('Name', name),
       field('Muscle group', group, 'Used for weekly sets per muscle group in Stats.'),
       dl,

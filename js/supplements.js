@@ -5,7 +5,7 @@
 
 import { all, save, saveMany } from './db.js';
 import {
-  h, clear, toast, openSheet, field, todayStr, parseDay, daysBetween, fmtDay, fmtTime,
+  h, add, clear, toast, openSheet, field, todayStr, parseDay, daysBetween, fmtDay, fmtTime,
   nowISO, sortBy, ts, dayEndMs, emptyNote, confirmSheet,
 } from './util.js';
 
@@ -54,9 +54,21 @@ export function isDue(version, day) {
   return true;
 }
 
+/** "5 mg"; rows synced with a missing dose read "No dose". */
+export function doseText(version, supp) {
+  const dose = version && version.dose != null && String(version.dose).trim() !== '' ? String(version.dose).trim() : '';
+  const unit = supp && supp.unit ? supp.unit : '';
+  return dose ? `${dose}${unit ? ` ${unit}` : ''}` : 'No dose';
+}
+
 export function scheduleText(version) {
   const s = schedOf(version);
-  if (s.type === 'every_n') return `Every ${s.n} days from ${fmtDay(s.start)}`;
+  if (s.type === 'every_n') {
+    const n = Math.max(1, parseInt(s.n, 10) || 1);
+    const start = s.start || (version && version.effective_from ? String(version.effective_from).slice(0, 10) : null);
+    const every = n === 1 ? 'Every day' : `Every ${n} days`;
+    return start ? `${every} from ${fmtDay(start)}` : every;
+  }
   if (s.type === 'weekdays') return (s.days || []).slice().sort().map((d) => WEEKDAYS[d]).join(', ') || 'No days picked';
   return 'Daily';
 }
@@ -115,7 +127,7 @@ function renderToday(root, data) {
         },
       },
       h('span', { class: 'check-box' }, isTaken ? '✓' : ''),
-      h('span', { class: 'grow' }, h('span', { class: 'strong' }, s.name), h('span', { class: 'muted' }, ` · ${v.dose} ${s.unit || ''}`)),
+      h('span', { class: 'grow' }, h('span', { class: 'strong' }, s.name), h('span', { class: 'muted' }, ` · ${doseText(v, s)}`)),
       isTaken ? h('span', { class: 'muted small' }, fmtTime(logs[0].taken_at)) : null));
     }
     root.append(list);
@@ -144,7 +156,7 @@ function renderManage(root, data) {
       const v = versionOn(data, s.id, todayStr()) || (data.vBySupp.get(s.id) || [])[0];
       return h('button', { type: 'button', class: 'list-row', onclick: () => openEditor(data, s) },
         h('span', { class: 'grow' }, h('span', { class: 'strong' }, s.name),
-          v ? h('span', { class: 'muted small block-text' }, `${v.dose} ${s.unit || ''} · ${scheduleText(v)} · ${slotsOf(v).join(', ')}`) : null),
+          v ? h('span', { class: 'muted small block-text' }, `${doseText(v, s)} · ${scheduleText(v)} · ${slotsOf(v).join(', ')}`) : null),
         h('span', { class: 'muted small' }, 'Edit'));
     })));
   }
@@ -192,7 +204,7 @@ function openEditor(data, supp) {
       return { cb, row: h('label', { class: 'check-row' }, cb, h('span', null, s)) };
     });
 
-    body.append(
+    add(body,
       field('Name', name),
       h('div', { class: 'row gap' }, h('div', { class: 'grow' }, field('Dose', dose)), h('div', { class: 'grow' }, field('Unit', unit))),
       unitList,
@@ -272,7 +284,7 @@ function openHistory(data, supp) {
       versions.length
         ? h('div', { class: 'list' }, versions.map((v) => h('div', { class: 'list-row static' },
           h('span', { class: 'grow' }, fmtDay(v.effective_from)),
-          h('span', { class: 'muted small right' }, `${v.dose} ${supp.unit || ''} · ${scheduleText(v)} · ${slotsOf(v).join(', ')}`))))
+          h('span', { class: 'muted small right' }, `${doseText(v, supp)} · ${scheduleText(v)} · ${slotsOf(v).join(', ')}`))))
         : emptyNote('No entries.'),
       h('div', { class: 'section-label' }, 'Taken'),
       logs.length
@@ -280,7 +292,7 @@ function openHistory(data, supp) {
           const v = versionOn(data, supp.id, l.date);
           return h('div', { class: 'list-row static' },
             h('span', { class: 'grow' }, `${fmtDay(l.date)} · ${l.slot}`),
-            h('span', { class: 'muted small' }, `${v ? v.dose : '?'} ${supp.unit || ''}${l.taken_at ? ` at ${fmtTime(l.taken_at)}` : ''}`));
+            h('span', { class: 'muted small' }, `${v ? doseText(v, supp) : 'Dose unknown'}${l.taken_at ? ` at ${fmtTime(l.taken_at)}` : ''}`));
         }))
         : emptyNote('Nothing logged yet.')
     );

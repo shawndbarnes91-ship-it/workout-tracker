@@ -70,7 +70,9 @@ create table if not exists public.sessions (
   template_id uuid,              -- null for Freestyle
   started_at timestamptz not null,
   ended_at timestamptz,
-  extras_json jsonb default '[]'::jsonb,  -- off-plan exercises added to this session only
+  -- Off-plan exercise ids added to this session, plus today-only slot changes as objects:
+  -- {"slot": "<slot id>", "swap": "<exercise id>", "skip": true, "sets": 4}. No new column needed.
+  extras_json jsonb default '[]'::jsonb,
   updated_at timestamptz not null default now(),
   deleted boolean not null default false
 );

@@ -2,7 +2,7 @@
 // Shows today's on-plan percentage and the current on-plan streak.
 
 import { all, save } from './db.js';
-import { h, clear, toast, openSheet, confirmSheet, pickImage, uuid, nowISO, dateStr, fmtDay, fmtTime, sortBy, ts, emptyNote } from './util.js';
+import { h, clear, toast, openSheet, confirmSheet, pickImage, uuid, nowISO, dateStr, fmtDay, fmtTime, sortBy, ts, emptyNote, plural } from './util.js';
 import { compressImage, storePhoto, mealPhotoPath, photoImg, deletePhoto } from './photos.js';
 
 let rootEl = null;
@@ -29,7 +29,7 @@ export async function render(root) {
       h('div', null,
         h('div', { class: 'muted small' }, 'Today on plan'),
         h('div', { class: 'big-stat' }, pct == null ? '-' : `${pct}%`),
-        h('div', { class: 'muted small' }, todays.length ? `${onToday} of ${todays.length} meals` : 'No meals yet today')),
+        h('div', { class: 'muted small' }, todays.length ? `${onToday} of ${plural(todays.length, 'meal')}` : 'No meals yet today')),
       h('div', null,
         h('div', { class: 'muted small' }, 'On-plan streak'),
         h('div', { class: 'big-stat' }, String(streak)),

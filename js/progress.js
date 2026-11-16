@@ -4,7 +4,7 @@
 
 import { all, save, saveMany } from './db.js';
 import {
-  h, clear, toast, openSheet, field, confirmSheet, pickImage, uuid, todayStr, fmtDay, fmtLb, sortBy, emptyNote,
+  h, add, clear, toast, openSheet, field, confirmSheet, pickImage, uuid, todayStr, fmtDay, fmtLb, sortBy, emptyNote,
 } from './util.js';
 import { compressImage, storePhoto, progressPhotoPath, photoImg, deletePhoto } from './photos.js';
 
@@ -40,7 +40,7 @@ export async function renderProgress(container, onChange) {
   const dates = checkinDates(data.photos);
   const latestBw = data.bodyweight[0];
 
-  container.append(
+  add(container,
     h('div', { class: 'row gap' },
       h('button', { type: 'button', class: 'btn btn-primary grow', onclick: () => openCheckin(data, onChange) }, 'Weekly check-in'),
       h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => openBodyweight(data, onChange) }, 'Log bodyweight')
@@ -110,7 +110,7 @@ function openBodyweight(data, onChange, entry = null) {
   openSheet(entry ? 'Edit bodyweight' : 'Log bodyweight', (body, api) => {
     const date = h('input', { class: 'input', type: 'date', value: entry ? entry.date : todayStr() });
     const w = h('input', { class: 'input big-input', type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'lb', value: entry ? entry.weight_lb : '' });
-    body.append(
+    add(body,
       field('Date', date),
       field('Weight (lb)', w),
       h('button', {
@@ -118,9 +118,10 @@ function openBodyweight(data, onChange, entry = null) {
         class: 'btn btn-primary block',
         onclick: async () => {
           const val = parseFloat(w.value);
+          if (!date.value) return toast('Pick a date.');
           if (!(val > 0)) return toast('Enter your weight.');
           if (entry && entry.date !== date.value) await save('bodyweight', { ...entry, date: date.value, weight_lb: val });
-          else await upsertBodyweight(data.bodyweight, date.value || todayStr(), val);
+          else await upsertBodyweight(data.bodyweight, date.value, val);
           api.close();
           toast('Bodyweight saved');
           onChange();

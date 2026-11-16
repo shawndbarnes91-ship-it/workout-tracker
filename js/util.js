@@ -58,16 +58,28 @@ export function daysBetween(a, b) {
   return Math.round((parseDay(b) - parseDay(a)) / DAY_MS);
 }
 
-export function fmtDay(v) {
+/** A Date for a YYYY-MM-DD day, an ISO time or epoch ms; null when missing or invalid. */
+function toDate(v) {
+  if (v == null || v === '') return null;
   const d = typeof v === 'string' && v.length === 10 ? parseDay(v) : new Date(v);
-  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+export function fmtDay(v) {
+  const d = toDate(v);
+  return d ? d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'No date';
 }
 export function fmtShortDay(v) {
-  const d = typeof v === 'string' && v.length === 10 ? parseDay(v) : new Date(v);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const d = toDate(v);
+  return d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'No date';
 }
 export function fmtTime(iso) {
-  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const d = toDate(iso);
+  return d ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+}
+
+/** "1 set", "3 sets". */
+export function plural(n, one, many = `${one}s`) {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 export function fmtDuration(sec) {
@@ -133,6 +145,15 @@ export function h(tag, props, ...kids) {
     else if (PROP_KEYS.has(k)) el[k] = v;
     else if (v === false) continue;
     else el.setAttribute(k, v === true ? '' : v);
+  }
+  return el;
+}
+
+/** Like el.append, but skips null, undefined and false (native append prints them). */
+export function add(el, ...kids) {
+  for (const k of kids.flat(Infinity)) {
+    if (k == null || k === false) continue;
+    el.append(k);
   }
   return el;
 }

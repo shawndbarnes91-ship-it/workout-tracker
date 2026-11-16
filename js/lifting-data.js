@@ -111,9 +111,53 @@ export function topSet(sets) {
   return top;
 }
 
-/** The exercise most recently used in this slot in an earlier session. */
+/**
+ * A session's extras_json holds two kinds of entries: plain exercise ids (exercises
+ * added to that session) and today-only changes to a slot, stored as objects:
+ * { slot: <slot id or "x:<exercise id>">, swap?: <exercise id>, skip?: true, sets?: <n> }.
+ * Older builds read only the plain ids and ignore the objects, so sync stays compatible.
+ */
+export function sessionPlan(session) {
+  let raw = session ? session.extras_json : null;
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch (e) { raw = []; }
+  }
+  if (!Array.isArray(raw)) raw = [];
+  const plan = { extras: [], tweaks: new Map() };
+  for (const x of raw) {
+    if (typeof x === 'string') {
+      if (!plan.extras.includes(x)) plan.extras.push(x);
+    } else if (x && typeof x === 'object' && typeof x.slot === 'string') {
+      plan.tweaks.set(x.slot, { ...(plan.tweaks.get(x.slot) || {}), ...x });
+    }
+  }
+  return plan;
+}
+
+/** The plan back to its extras_json form; empty changes are dropped. */
+export function planJson(plan) {
+  const tweaks = [];
+  for (const [slot, t] of plan.tweaks) {
+    const o = { slot };
+    if (t.swap) o.swap = t.swap;
+    if (t.skip) o.skip = true;
+    if (t.sets) o.sets = t.sets;
+    if (o.swap || o.skip || o.sets) tweaks.push(o);
+  }
+  return [...plan.extras, ...tweaks];
+}
+
+/**
+ * The exercise most recently used in this slot in an earlier session. Sessions where the
+ * slot was swapped are ignored, so a swap lasts that day only.
+ */
 export function lastExerciseForSlot(d, slotId, currentSessionId) {
-  const prior = d.sets.filter((s) => s.slot_id === slotId && s.session_id !== currentSessionId);
+  const swapped = new Set();
+  for (const s of d.sessions) {
+    const t = sessionPlan(s).tweaks.get(slotId);
+    if (t && t.swap) swapped.add(s.id);
+  }
+  const prior = d.sets.filter((s) => s.slot_id === slotId && s.session_id !== currentSessionId && !swapped.has(s.session_id));
   if (!prior.length) return null;
   const latest = prior.reduce((a, b) => (ts(b.logged_at) > ts(a.logged_at) ? b : a));
   const ex = d.exById.get(latest.exercise_id);

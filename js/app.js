@@ -56,7 +56,13 @@ function bindTabs() {
 
 async function boot() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('Service worker not registered', e));
+    navigator.serviceWorker.register('./sw.js').then((reg) => {
+      // The phone often resumes the app instead of relaunching it, so check for a new
+      // version each time it comes back to the front.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    }).catch((e) => console.warn('Service worker not registered', e));
   }
   if (navigator.storage && navigator.storage.persist) {
     navigator.storage.persist().catch(() => {});

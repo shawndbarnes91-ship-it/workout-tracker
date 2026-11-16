@@ -5,11 +5,11 @@
 import { save, saveMany, getMeta, setMeta } from './db.js';
 import {
   h, clear, toast, openSheet, confirmSheet, segmented, stepper, field, nowISO, fmtDay, fmtTime,
-  fmtLb, sortBy, ts, emptyNote,
+  fmtLb, sortBy, ts, emptyNote, plural,
 } from './util.js';
 import {
   loadLifting, exercisesFor, suggestedTemplateId, templateLabel, lastTime, topSet,
-  lastExerciseForSlot, loadLabel, loadStep, sessionsWithSets,
+  lastExerciseForSlot, loadLabel, loadStep, sessionsWithSets, sessionPlan, planJson,
 } from './lifting-data.js';
 import { detectPRs, prSetIds } from './prs.js';
 import { startRest, stop as stopRest, primeAudio } from './timer.js';
@@ -23,7 +23,7 @@ const CURSOR_KEY = 'session_cursor';
 let view = 'home'; // home | library | templates | run | walking_pad
 let override = null; // template id, or 'free'
 let rootEl = null;
-let cursor = null; // { sessionId, block, member: {blockIndex: memberIndex}, choice: {memberKey: exerciseId}, focusKey }
+let cursor = null; // { sessionId, block, member: {blockIndex: memberIndex}, focusKey }
 
 export async function render(root) {
   rootEl = root;
@@ -74,7 +74,8 @@ function renderHome(root, d) {
     blocksForTemplate(d, choice).forEach((b, i) => {
       const names = b.slots.map((s) => (d.catById.get(s.category_id) || {}).name || 'Slot').join(' + ');
       const s0 = b.slots[0];
-      const detail = b.slots.length > 1 ? `${s0.sets} rounds` : `${s0.sets} sets${s0.target_reps ? ` × ${s0.target_reps}` : ''}`;
+      const n = Math.max(1, parseInt(s0.sets, 10) || 1);
+      const detail = b.slots.length > 1 ? plural(n, 'round') : `${plural(n, 'set')}${s0.target_reps ? ` × ${s0.target_reps}` : ''}`;
       preview.append(h('div', { class: 'preview-row' }, h('span', { class: 'slot-num' }, String(i + 1)), h('span', { class: 'grow' }, names), h('span', { class: 'muted small' }, detail)));
     });
   }
@@ -99,10 +100,10 @@ function renderHome(root, d) {
       }, `Start ${choice === 'free' ? 'Freestyle' : templateLabel(d, choice)}`)
     ),
     h('div', { class: 'card' },
-      h('div', { class: 'section-label' }, 'Cardio'),
+      h('div', { class: 'section-label' }, 'Log cardio'),
       h('div', { class: 'row gap' },
-        h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => { view = 'run'; rerender(); } }, 'Log run'),
-        h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => { view = 'walking_pad'; rerender(); } }, 'Log walking pad')
+        h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => { view = 'run'; rerender(); } }, 'Run'),
+        h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => { view = 'walking_pad'; rerender(); } }, 'Walking pad')
       )
     ),
     h('div', { class: 'section-label' }, 'Recent workouts'),
@@ -111,7 +112,7 @@ function renderHome(root, d) {
         const n = d.sets.filter((x) => x.session_id === s.id).length;
         return h('button', { type: 'button', class: 'list-row', onclick: () => openSessionDetail(d, s) },
           h('span', { class: 'grow' }, fmtDay(s.started_at), h('span', { class: 'muted small' }, ` · ${templateLabel(d, s.template_id)}`)),
-          h('span', { class: 'muted small' }, `${n} sets`));
+          h('span', { class: 'muted small' }, plural(n, 'set')));
       }))
       : emptyNote('No workouts logged yet.'),
     h('div', { class: 'row gap' },
@@ -123,7 +124,7 @@ function renderHome(root, d) {
 
 async function startSession(templateId) {
   const s = await save('sessions', { template_id: templateId, started_at: nowISO(), ended_at: null, extras_json: [] });
-  cursor = { sessionId: s.id, block: 0, member: {}, choice: {} };
+  cursor = { sessionId: s.id, block: 0, member: {} };
   await setMeta(CURSOR_KEY, cursor);
   override = null;
   rerender();
@@ -163,29 +164,47 @@ function openSessionDetail(d, session) {
 
 /* ---------------- active session ---------------- */
 
+let plan = null; // sessionPlan() of the active session; changed in place, then saved
+
 async function loadCursor(sessionId) {
   if (cursor && cursor.sessionId === sessionId) return cursor;
   const saved = await getMeta(CURSOR_KEY);
-  cursor = saved && saved.sessionId === sessionId ? saved : { sessionId, block: 0, member: {}, choice: {} };
+  cursor = saved && saved.sessionId === sessionId ? saved : { sessionId, block: 0, member: {} };
   cursor.member = cursor.member || {};
-  cursor.choice = cursor.choice || {};
   return cursor;
 }
 
 const persistCursor = () => setMeta(CURSOR_KEY, cursor);
 
-const extrasOf = (session) => (Array.isArray(session.extras_json) ? session.extras_json : []);
+/** Saves today-only changes (swap, skip, set count) on the session row, so they sync. */
+async function savePlan(session) {
+  await save('sessions', { ...session, extras_json: planJson(plan) });
+}
+
+function tweak(key, patch) {
+  const t = { ...(plan.tweaks.get(key) || {}), ...patch };
+  for (const k of Object.keys(t)) if (t[k] == null || t[k] === false) delete t[k];
+  plan.tweaks.set(key, t);
+}
 
 function buildBlocks(d, session) {
+  const tw = (key) => plan.tweaks.get(key) || {};
   const blocks = groupSlots(session.template_id ? d.slotsByTpl.get(session.template_id) || [] : []).map((b) => ({
-    members: b.slots.map((slot) => ({
-      key: slot.id, kind: 'slot', slot, catId: slot.category_id, target: slot.sets || 1, targetReps: slot.target_reps || null,
-    })),
+    members: b.slots.map((slot) => {
+      const t = tw(slot.id);
+      const base = Math.max(1, parseInt(slot.sets, 10) || 1);
+      return {
+        key: slot.id, kind: 'slot', slot, catId: slot.category_id, base, target: t.sets || base,
+        targetReps: slot.target_reps || null, swap: t.swap && d.exById.has(t.swap) ? t.swap : null, skipped: !!t.skip,
+      };
+    }),
   }));
-  for (const exId of extrasOf(session)) {
+  for (const exId of plan.extras) {
     if (!d.exById.has(exId)) continue;
+    const key = `x:${exId}`;
+    const t = tw(key);
     blocks.push({
-      members: [{ key: `x:${exId}`, kind: 'extra', exerciseId: exId, catId: (d.catsByEx.get(exId) || [])[0], target: 3, targetReps: null }],
+      members: [{ key, kind: 'extra', exerciseId: exId, catId: (d.catsByEx.get(exId) || [])[0], base: 3, target: t.sets || 3, targetReps: null, swap: null, skipped: false }],
     });
   }
   return blocks;
@@ -195,25 +214,39 @@ function memberSets(m, sSets) {
   const list = m.kind === 'slot'
     ? sSets.filter((x) => x.slot_id === m.slot.id)
     : sSets.filter((x) => !x.slot_id && x.exercise_id === m.exerciseId);
-  return list.sort((a, b) => (a.set_number - b.set_number) || (ts(a.logged_at) - ts(b.logged_at)));
+  return list.sort((a, b) => ((a.set_number || 0) - (b.set_number || 0)) || (ts(a.logged_at) - ts(b.logged_at)));
 }
 
-function chosenExercise(d, m, session, sSets) {
-  if (m.kind === 'extra') return m.exerciseId;
-  const pick = cursor.choice[m.key];
-  if (pick && d.exById.has(pick)) return pick;
-  const mine = memberSets(m, sSets);
-  if (mine.length) return mine[mine.length - 1].exercise_id;
-  const last = lastExerciseForSlot(d, m.slot.id, session.id);
-  if (last) return last;
+/** The exercise a slot starts with: the template default, else the last one used there (swaps do not count). */
+function plannedExercise(d, m, session) {
   const def = m.slot.default_exercise_id && d.exById.get(m.slot.default_exercise_id);
   if (def && !def.archived) return def.id;
+  const last = lastExerciseForSlot(d, m.slot.id, session.id);
+  if (last) return last;
   const list = exercisesFor(d, m.catId);
   return list[0] ? list[0].id : null;
 }
 
+function chosenExercise(d, m, session, sSets) {
+  if (m.kind === 'extra') return m.exerciseId;
+  if (m.swap) return m.swap;
+  return plannedExercise(d, m, session);
+}
+
+const blockSkipped = (block) => block.members.every((m) => m.skipped);
+
 function blockDone(block, sSets) {
-  return block.members.every((m) => memberSets(m, sSets).length >= m.target);
+  return !blockSkipped(block) && block.members.every((m) => m.skipped || memberSets(m, sSets).length >= m.target);
+}
+
+/** Done or skipped: nothing left to do in this slot today. */
+const blockSettled = (block, sSets) => blockSkipped(block) || blockDone(block, sSets);
+
+/** Next slot that still has work, after bIdx first, then from the top. -1 when none. */
+function nextOpenBlock(blocks, bIdx, sSets) {
+  let next = blocks.findIndex((b, i) => i > bIdx && !blockSettled(b, sSets));
+  if (next < 0) next = blocks.findIndex((b, i) => i !== bIdx && !blockSettled(b, sSets));
+  return next;
 }
 
 function currentMemberIndex(block, bIdx, sSets) {
@@ -233,6 +266,7 @@ function currentMemberIndex(block, bIdx, sSets) {
 
 async function renderSession(root, d, session) {
   await loadCursor(session.id);
+  plan = sessionPlan(session);
   const blocks = buildBlocks(d, session);
   const sSets = d.sets.filter((x) => x.session_id === session.id);
   if (cursor.focusKey) {
@@ -243,14 +277,14 @@ async function renderSession(root, d, session) {
   }
   if (cursor.block >= blocks.length) cursor.block = Math.max(0, blocks.length - 1);
   if (cursor.block < 0) cursor.block = 0;
-  const allDone = blocks.length > 0 && blocks.every((b) => blockDone(b, sSets));
+  const allDone = blocks.length > 0 && blocks.every((b) => blockSettled(b, sSets));
   clear(root);
 
   root.append(
     h('header', { class: 'page-head' },
       h('div', { class: 'grow' },
         h('h1', null, templateLabel(d, session.template_id)),
-        h('div', { class: 'muted small' }, `Started ${fmtTime(session.started_at)} · ${sSets.length} sets`)
+        h('div', { class: 'muted small' }, `Started ${fmtTime(session.started_at)} · ${plural(sSets.length, 'set')}`)
       )
     ),
     h('div', { class: 'row gap' },
@@ -270,44 +304,56 @@ async function renderSession(root, d, session) {
     return;
   }
 
-  // Slot navigation.
+  // Slot navigation: the numbered dots.
   const strip = h('div', { class: 'slot-strip' }, blocks.map((b, i) => {
-    const done = blockDone(b, sSets);
+    const skipped = blockSkipped(b);
+    const done = !skipped && blockDone(b, sSets);
     return h('button', {
       type: 'button',
-      class: 'slot-dot' + (i === cursor.block ? ' current' : '') + (done ? ' done' : ''),
-      'aria-label': `Slot ${i + 1}${done ? ', done' : ''}`,
+      class: 'slot-dot' + (i === cursor.block ? ' current' : '') + (done ? ' done' : '') + (skipped ? ' skipped' : ''),
+      'aria-label': `Slot ${i + 1}${done ? ', done' : ''}${skipped ? ', skipped today' : ''}`,
       onclick: () => { cursor.block = i; cursor.member = {}; persistCursor(); rerender(); },
     }, done ? '✓' : String(i + 1));
   }));
-  root.append(
-    h('div', { class: 'slot-nav' },
-      h('button', { type: 'button', class: 'nav-btn', disabled: cursor.block === 0, 'aria-label': 'Previous slot', onclick: () => { cursor.block -= 1; persistCursor(); rerender(); } }, '‹'),
-      h('div', { class: 'grow center' }, `Slot ${cursor.block + 1} of ${blocks.length}`),
-      h('button', { type: 'button', class: 'nav-btn', disabled: cursor.block >= blocks.length - 1, 'aria-label': 'Next slot', onclick: () => { cursor.block += 1; persistCursor(); rerender(); } }, '›')
-    ),
-    strip
-  );
+  root.append(strip);
   requestAnimationFrame(() => {
+    // Scroll only the strip so the current dot is in view; the page itself stays put.
     const cur = strip.querySelector('.current');
-    if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center' });
+    if (!cur) return;
+    const sr = strip.getBoundingClientRect();
+    const cr = cur.getBoundingClientRect();
+    strip.scrollLeft += (cr.left + cr.width / 2) - (sr.left + sr.width / 2);
   });
 
   if (allDone) {
     root.append(h('div', { class: 'card' },
       h('div', { class: 'big-stat' }, 'All slots done.'),
-      h('p', { class: 'muted' }, 'Add an exercise, log extra sets, or finish.'),
-      h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => finishSession(session, sSets) }, 'Finish workout')
+      h('p', { class: 'muted' }, 'Add an exercise, log extra sets, or tap Finish at the top.')
     ));
   }
 
   const bIdx = cursor.block;
   const block = blocks[bIdx];
+
+  if (blockSkipped(block)) {
+    const names = block.members.map((m) => {
+      const ex = d.exById.get(chosenExercise(d, m, session, sSets));
+      return ex ? ex.name : (d.catById.get(m.catId) || {}).name || 'Exercise';
+    }).join(' + ');
+    root.append(h('div', { class: 'card block-card stack' },
+      h('div', { class: 'section-label' }, `Slot ${bIdx + 1} · skipped today`),
+      h('div', { class: 'ex-title' }, names),
+      h('p', { class: 'muted small' }, 'Skipped slots do not count as unfinished. Next session it is back as usual.'),
+      h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => setSkip(session, block, false) }, 'Unskip')
+    ), discardButton(session, sSets));
+    return;
+  }
+
   const mIdx = currentMemberIndex(block, bIdx, sSets);
   const card = h('div', { class: 'card block-card' });
   if (block.members.length > 1) {
     const minCount = Math.min(...block.members.map((m) => memberSets(m, sSets).length));
-    const rounds = block.members[0].target;
+    const rounds = Math.max(...block.members.map((m) => m.target));
     card.append(
       h('div', { class: 'section-label' }, `Superset · round ${Math.min(minCount + 1, rounds)} of ${rounds}`),
       h('div', { class: 'member-tabs' }, block.members.map((m, i) => {
@@ -323,6 +369,45 @@ async function renderSession(root, d, session) {
   }
   card.append(memberPanel(d, session, sSets, blocks, bIdx, mIdx));
   root.append(card, discardButton(session, sSets));
+}
+
+/** Skip (or unskip) every exercise in a slot for this session only. */
+async function setSkip(session, block, on) {
+  for (const m of block.members) tweak(m.key, { skip: on || null });
+  await savePlan(session);
+  if (on) {
+    const d = await loadLifting();
+    const sSets = d.sets.filter((x) => x.session_id === session.id);
+    const blocks = buildBlocks(d, session);
+    const next = nextOpenBlock(blocks, cursor.block, sSets);
+    if (next >= 0) {
+      cursor.block = next;
+      toast(`Skipped for today. Next: slot ${next + 1}`);
+    } else toast('Skipped for today. Every slot is done or skipped.');
+  } else toast('Slot is back on for today');
+  cursor.member = {};
+  await persistCursor();
+  rerender();
+}
+
+/** Use another exercise in this slot today only. Next session starts with the planned exercise. */
+async function swapExercise(d, session, m, exId) {
+  tweak(m.key, { swap: exId && exId !== plannedExercise(d, m, session) ? exId : null });
+  await savePlan(session);
+  rerender();
+}
+
+async function undoSwap(session, m) {
+  tweak(m.key, { swap: null });
+  await savePlan(session);
+  rerender();
+}
+
+/** Today's set (or round) count for these exercises; the template stays as it is. */
+async function setTarget(session, members, n) {
+  for (const m of members) tweak(m.key, { sets: n === m.base ? null : n });
+  await savePlan(session);
+  rerender();
 }
 
 function discardButton(session, sSets) {
@@ -355,7 +440,7 @@ async function finishSession(session, sSets) {
   stopRest();
   cursor = null;
   await setMeta(CURSOR_KEY, null);
-  toast(`Workout saved: ${sSets.length} sets`);
+  toast(`Workout saved: ${plural(sSets.length, 'set')}`);
   rerender();
 }
 
@@ -363,8 +448,10 @@ async function addExercise(session) {
   await openExercisePicker({
     title: 'Add Exercise',
     onPick: async (ex) => {
-      const extras = extrasOf(session);
-      if (!extras.includes(ex.id)) await save('sessions', { ...session, extras_json: [...extras, ex.id] });
+      if (!plan.extras.includes(ex.id)) {
+        plan.extras.push(ex.id);
+        await savePlan(session);
+      }
       cursor.focusKey = `x:${ex.id}`;
       cursor.member = {};
       await persistCursor();
@@ -373,6 +460,12 @@ async function addExercise(session) {
     },
   });
 }
+
+/** Rest in seconds; 0 means no rest timer. */
+const restOf = (ex) => {
+  const n = Number(ex.default_rest_sec ?? 90);
+  return Number.isFinite(n) && n >= 0 ? n : 90;
+};
 
 function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
   const block = blocks[bIdx];
@@ -386,7 +479,7 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
   panel.append(h('div', { class: 'section-label' }, (m.kind === 'extra' ? 'Added exercise · ' : '') + (cat ? cat.name : 'Exercise')));
   if (m.kind === 'slot' && m.slot.note) panel.append(h('div', { class: 'muted small' }, m.slot.note));
 
-  // Exercise choice for this slot.
+  // Exercise choice for this slot. Any change here is for today only.
   if (m.kind === 'slot') {
     const opts = exercisesFor(d, m.catId, exId);
     const sel = h('select', { class: 'input select-big', 'aria-label': 'Exercise' },
@@ -399,20 +492,27 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
         openExerciseEditor({
           presetCategoryId: m.catId,
           data: d,
-          onSaved: (nex) => {
-            if (!nex) return;
-            cursor.choice[m.key] = nex.id;
-            persistCursor();
-            rerender();
-          },
+          onSaved: (nex) => { if (nex) swapExercise(d, session, m, nex.id); },
         });
         return;
       }
-      cursor.choice[m.key] = sel.value;
-      persistCursor();
-      rerender();
+      swapExercise(d, session, m, sel.value);
     });
     panel.append(sel);
+    if (m.swap) {
+      panel.append(h('div', { class: 'row gap' },
+        h('span', { class: 'muted small grow' }, 'Swapped for today only.'),
+        h('button', { type: 'button', class: 'btn-text small', onclick: () => undoSwap(session, m) }, 'Undo swap')
+      ));
+    }
+    panel.append(h('div', { class: 'row gap' },
+      h('button', {
+        type: 'button',
+        class: 'btn btn-secondary grow',
+        onclick: () => openExercisePicker({ title: 'Swap for today', onPick: (nex) => swapExercise(d, session, m, nex.id) }),
+      }, 'Swap'),
+      h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => setSkip(session, block, true) }, 'Skip today')
+    ));
   } else if (ex) {
     panel.append(h('div', { class: 'ex-title' }, ex.name));
   }
@@ -423,16 +523,17 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
       h('button', {
         type: 'button',
         class: 'btn btn-primary block',
-        onclick: () => openExerciseEditor({ presetCategoryId: m.catId, data: d, onSaved: (nex) => { if (nex) { cursor.choice[m.key] = nex.id; persistCursor(); } rerender(); } }),
+        onclick: () => openExerciseEditor({ presetCategoryId: m.catId, data: d, onSaved: (nex) => { if (nex) swapExercise(d, session, m, nex.id); else rerender(); } }),
       }, 'Add an exercise')
     );
     return panel;
   }
 
   // Setup note and rest.
+  const rest = restOf(ex);
   panel.append(h('div', { class: 'row gap wrap' },
     h('button', { type: 'button', class: 'chip-btn grow', onclick: () => editSetupNote(ex) }, ex.setup_note ? `Setup: ${ex.setup_note}` : 'Add setup note'),
-    h('button', { type: 'button', class: 'chip-btn', onclick: () => editRest(ex) }, `Rest ${ex.default_rest_sec || 90} s`)
+    h('button', { type: 'button', class: 'chip-btn', onclick: () => editRest(ex) }, rest > 0 ? `Rest ${rest} s` : 'Rest off')
   ));
 
   // Last time and the progression cue (based on the top set).
@@ -440,8 +541,8 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
   const top = lt ? topSet(lt.sets) : null;
   const targetReps = m.targetReps;
   let cue;
-  if (!lt) cue = h('div', { class: 'cue' }, 'First time logging this exercise. Start light and ramp up.');
-  else if (targetReps && top && top.reps >= targetReps) cue = h('div', { class: 'cue cue-up' }, 'Add weight today.');
+  if (!lt || !top) cue = h('div', { class: 'cue' }, 'First time logging this exercise. Start light and ramp up.');
+  else if (targetReps && top.reps >= targetReps) cue = h('div', { class: 'cue cue-up' }, 'Add weight today.');
   else cue = h('div', { class: 'cue' }, `Beat last time: ${fmtLb(top.weight_lb)} lb × ${top.reps}`);
   panel.append(cue);
   if (lt) {
@@ -451,20 +552,22 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
     ));
   }
 
-  // Sets logged in this session for this slot.
+  // Sets logged in this session for this slot, numbered in order.
   const prIds = prSetIds(d.sets);
   if (mine.length) {
     panel.append(h('div', { class: 'this-session' },
       h('div', { class: 'muted small' }, 'Today (tap to edit)'),
-      h('div', { class: 'chips' }, mine.map((s) => {
+      h('div', { class: 'chips' }, mine.map((s, i) => {
         const other = s.exercise_id !== ex.id ? ` ${(d.exById.get(s.exercise_id) || {}).name || ''}` : '';
-        return h('button', { type: 'button', class: 'chip chip-btn-inline' + (prIds.has(s.id) ? ' chip-pr' : ''), onclick: () => editSet(s, ex) }, `${s.set_number}: ${fmtLb(s.weight_lb)} × ${s.reps}${other}`);
+        return h('button', { type: 'button', class: 'chip chip-btn-inline' + (prIds.has(s.id) ? ' chip-pr' : ''), onclick: () => editSet(s, ex, i + 1) }, `${i + 1}: ${fmtLb(s.weight_lb)} × ${s.reps}${other}`);
       }))
     ));
   }
 
   // Entry, pre-filled from last time.
   const setNo = mine.length + 1;
+  // Stored numbers keep growing after a delete, so no two sets share a number.
+  const nextNumber = mine.reduce((a, s) => Math.max(a, Number(s.set_number) || 0), 0) + 1;
   const src = (lt && lt.sets[setNo - 1]) || mine[mine.length - 1] || (lt && lt.sets[lt.sets.length - 1]) || null;
   let plates = ex.load_type === 'plates' && src && src.plates_json ? src.plates_json : null;
   const weight = stepper({
@@ -491,7 +594,20 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
     }, 'Plates per side'));
   }
 
+  // Today's set count (rounds for a superset), for this session only.
+  const targetMembers = block.members.length > 1 ? block.members : [m];
+  const shownTarget = Math.max(...targetMembers.map((x) => x.target));
+  const changeTarget = (dlt) => {
+    const n = Math.min(20, Math.max(1, shownTarget + dlt));
+    if (n !== shownTarget) setTarget(session, targetMembers, n);
+  };
   const isExtraSet = setNo > m.target;
+  panel.append(h('div', { class: 'target-row' },
+    h('span', { class: 'grow muted small' }, block.members.length > 1 ? 'Rounds today' : 'Sets today'),
+    h('button', { type: 'button', class: 'step-btn step-btn-small', 'aria-label': 'One fewer set today', disabled: shownTarget <= 1, onclick: () => changeTarget(-1) }, '−'),
+    h('span', { class: 'plate-count' }, String(shownTarget)),
+    h('button', { type: 'button', class: 'step-btn step-btn-small', 'aria-label': 'One more set today', disabled: shownTarget >= 20, onclick: () => changeTarget(1) }, '+')
+  ));
   panel.append(h('button', {
     type: 'button',
     class: 'btn btn-primary block btn-log',
@@ -510,7 +626,7 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
         session_id: session.id,
         slot_id: m.kind === 'slot' ? m.slot.id : null,
         exercise_id: ex.id,
-        set_number: setNo,
+        set_number: nextNumber,
         weight_lb: w,
         plates_json: ex.load_type === 'plates' ? plates : null,
         reps: r,
@@ -519,15 +635,14 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
       const after = [...sSets, saved];
       if (prs.length) toast(`PR! ${prs.map((p) => p.text).join(' · ')}`, { pr: true, ms: 4000 });
 
-      // Rest after a single set, or after the last exercise of a superset round.
+      // Rest after a single set, or after the last exercise of a superset round. 0 means no timer.
       const myCount = memberSets(m, after).length;
-      const roundDone = block.members.every((mm) => memberSets(mm, after).length >= myCount);
-      if (block.members.length === 1 || roundDone) startRest(ex.default_rest_sec || 90);
+      const roundDone = block.members.every((mm) => mm.skipped || memberSets(mm, after).length >= myCount);
+      if ((block.members.length === 1 || roundDone) && rest > 0) startRest(rest);
 
       delete cursor.member[bIdx];
       if (!wasDone && blockDone(block, after)) {
-        let next = blocks.findIndex((b, i) => i > bIdx && !blockDone(b, after));
-        if (next < 0) next = blocks.findIndex((b) => !blockDone(b, after));
+        const next = nextOpenBlock(blocks, bIdx, after);
         if (next >= 0) {
           cursor.block = next;
           if (!prs.length) toast(`Slot done. Next: slot ${next + 1}`);
@@ -542,15 +657,17 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
   if (m.kind === 'extra') {
     const tpl = session.template_id ? d.tplById.get(session.template_id) : null;
     panel.append(h('div', { class: 'row gap' },
-      tpl ? h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => addToTemplate(d, session, ex, sSets) }, `Add to template ${tpl.name}`) : null,
+      tpl ? h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => addToTemplate(d, session, ex, sSets) }, 'Add to template') : null,
       !mine.length ? h('button', {
         type: 'button',
         class: 'btn btn-secondary grow',
         onclick: async () => {
-          await save('sessions', { ...session, extras_json: extrasOf(session).filter((id) => id !== ex.id) });
+          plan.extras = plan.extras.filter((id) => id !== ex.id);
+          plan.tweaks.delete(m.key);
+          await savePlan(session);
           rerender();
         },
-      }, 'Remove from session') : null
+      }, 'Remove') : null
     ));
   }
   return panel;
@@ -572,15 +689,17 @@ async function addToTemplate(d, session, ex, sSets) {
   });
   const moved = sSets.filter((s) => !s.slot_id && s.exercise_id === ex.id).map((s) => ({ ...s, slot_id: slot.id }));
   await saveMany('sets', moved);
-  await save('sessions', { ...session, extras_json: extrasOf(session).filter((id) => id !== ex.id) });
+  plan.extras = plan.extras.filter((id) => id !== ex.id);
+  plan.tweaks.delete(`x:${ex.id}`);
+  await savePlan(session);
   cursor.focusKey = slot.id;
   await persistCursor();
   toast(`Added to ${templateLabel(d, session.template_id)}. Edit sets and reps in Templates.`);
   rerender();
 }
 
-function editSet(set, ex) {
-  openSheet(`Set ${set.set_number}`, (body, api) => {
+function editSet(set, ex, shownNumber) {
+  openSheet(`Set ${shownNumber}`, (body, api) => {
     const w = stepper({ value: set.weight_lb, step: loadStep(ex.load_type), label: 'weight' });
     const r = stepper({ value: set.reps, step: 1, decimals: false, label: 'reps' });
     body.append(
@@ -636,15 +755,22 @@ function editRest(ex) {
     const setRest = async (sec) => {
       await save('exercises', { ...ex, default_rest_sec: sec });
       api.close();
-      toast(`Rest set to ${sec} s`);
+      toast(sec > 0 ? `Rest set to ${sec} s` : 'Rest timer off');
       rerender();
     };
-    const custom = h('input', { class: 'input', type: 'number', inputmode: 'numeric', value: ex.default_rest_sec || 90 });
+    const custom = h('input', { class: 'input', type: 'number', inputmode: 'numeric', min: '0', value: restOf(ex) });
     body.append(
       h('div', { class: 'row gap wrap' }, [45, 60, 90, 120, 150, 180, 240].map((s) =>
         h('button', { type: 'button', class: 'btn btn-secondary small-btn' + (s === ex.default_rest_sec ? ' selected' : ''), onclick: () => setRest(s) }, `${s} s`))),
-      field('Custom (seconds)', custom),
-      h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => setRest(Math.max(5, parseInt(custom.value, 10) || 90)) }, 'Save')
+      field('Custom (seconds)', custom, '0 turns the rest timer off.'),
+      h('button', {
+        type: 'button',
+        class: 'btn btn-primary block',
+        onclick: () => {
+          const v = parseInt(custom.value, 10);
+          setRest(Number.isNaN(v) ? 90 : v <= 0 ? 0 : Math.max(5, v));
+        },
+      }, 'Save')
     );
   });
 }
