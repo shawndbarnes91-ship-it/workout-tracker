@@ -117,7 +117,7 @@ fill in `config.js`, push, and wait for GitHub Pages to publish.
 4. Pause Fish oil: gone from Today, listed under Paused. Archive it: listed under
    Archived; History still there.
 5. Every N days: an item every 2 days starting today shows today, not tomorrow.
-6. Stats > Progress > Log bodyweight 200. Weekly check-in: weight 199, take front and
+6. Stats > Progress > Log weight 200. Weekly check-in: weight 199, take front and
    side photos, Save. The check-in shows both photos and 199 lb.
 7. Sync: wait for "Synced". In Supabase check rows in meals, supplements,
    supplement_versions, supplement_logs, runs, bodyweight, progress_photos, and files

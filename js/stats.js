@@ -556,6 +556,8 @@ function dataCard() {
     });
     card.append(line, btn);
   }
-  card.append(h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => exportAll() }, icon('download'), 'Export all data (JSON + CSV)'));
+  card.append(
+    h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => exportAll() }, icon('download'), 'Export all data'),
+    h('p', { class: 'muted small' }, 'Downloads a zip with JSON and CSV files.'));
   return card;
 }

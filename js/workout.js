@@ -285,7 +285,7 @@ async function renderSession(root, d, session) {
   root.append(
     pageHead({
       title: templateLabel(d, session.template_id),
-      sub: `Started ${fmtTime(session.started_at)} · ${plural(sSets.length, 'set')}`,
+      sub: `${fmtTime(session.started_at)} · ${plural(sSets.length, 'set')}`,
       actions: [
         h('button', { type: 'button', class: 'btn btn-secondary btn-head icon-only', 'aria-label': 'Add exercise', title: 'Add exercise', onclick: () => addExercise(session) }, icon('plus')),
         h('button', { type: 'button', class: (allDone ? 'btn btn-primary' : 'btn btn-secondary') + ' btn-head', onclick: () => finishSession(d, session, sSets, blocks) }, icon('check'), 'Finish'),
@@ -697,10 +697,10 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
   if (m.kind === 'extra') {
     const tpl = session.template_id ? d.tplById.get(session.template_id) : null;
     const btns = [
-      tpl ? h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => addToTemplate(d, session, ex, sSets) }, 'Add to template') : null,
+      tpl ? h('button', { type: 'button', class: 'btn btn-secondary fit', onclick: () => addToTemplate(d, session, ex, sSets) }, 'Add to template') : null,
       !mine.length ? h('button', {
         type: 'button',
-        class: 'btn btn-secondary grow',
+        class: 'btn btn-secondary fit',
         onclick: async () => {
           plan.extras = plan.extras.filter((id) => id !== ex.id);
           plan.tweaks.delete(m.key);

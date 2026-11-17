@@ -25,7 +25,7 @@ export async function renderLibrary(root, onBack) {
       any = true;
       listWrap.append(
         h('details', { class: 'card cat-card', open: q ? true : null },
-          h('summary', { class: 'cat-summary' },
+          h('summary', { class: 'cat-summary', 'data-multiline': '' },
             h('span', { class: 'grow' }, h('span', { class: 'row-title' }, cat.name), h('span', { class: 'row-sub' }, `${cat.muscle_group || 'No group'} · ${exs.length}`))
           ),
           h('div', { class: 'list' },

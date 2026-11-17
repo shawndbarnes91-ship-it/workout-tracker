@@ -123,6 +123,7 @@ function renderToday(root, data) {
       list.append(h('button', {
         type: 'button',
         class: 'check-item' + (isTaken ? ' taken' : ''),
+        'data-multiline': '',
         'aria-pressed': isTaken ? 'true' : 'false',
         onclick: async () => {
           if (isTaken) await saveMany('supplement_logs', logs.map((l) => ({ ...l, deleted: true })));

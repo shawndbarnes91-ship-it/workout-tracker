@@ -143,7 +143,7 @@ p { margin: 0; }
 .head-title h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .head-sub { font-size: var(--t-foot); color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .page-head.has-sub h1, .page-head.sub-page h1 { font-size: var(--t-title); }
-.head-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.head-actions { display: flex; align-items: center; gap: 6px; flex: none; }
 .back {
   flex: none;
   display: inline-flex;
@@ -247,6 +247,7 @@ p { margin: 0; }
 }
 .row-title { display: block; overflow-wrap: anywhere; }
 .row-sub { display: block; font-size: var(--t-foot); color: var(--fg-2); margin-top: 2px; }
+.row-sub > span, .row-sub > .tag { display: inline-block; white-space: nowrap; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .card.two-col { display: grid; }
 .big-stat { font-size: var(--t-title); font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
@@ -302,16 +303,20 @@ p { margin: 0; }
 .small-btn { min-height: var(--tap); padding: 0 12px; font-size: var(--t-sub); }
 .btn-tall { min-height: var(--btn-primary-h); }
 .btn-log { min-height: var(--btn-primary-h); font-size: 19px; width: 100%; }
-.btn-head { min-height: var(--tap); padding: 0 14px; font-size: var(--t-sub); }
+.btn-head { min-height: var(--tap); padding: 0 12px; font-size: var(--t-sub); }
 .btn-head.btn-primary { min-height: var(--tap); }
 /* Buttons side by side share one height. */
 .row > .btn, .row > .pill { align-self: stretch; }
-.row > .btn.grow { padding-left: 12px; padding-right: 12px; }
+.row > .btn.grow { padding-left: 8px; padding-right: 8px; }
+.row > .btn.btn-stack { flex-direction: column; gap: 4px; min-height: 64px; padding: 8px; }
+.row > .btn.fit { flex: 1 1 auto; padding-left: 8px; padding-right: 8px; }
 
 /* Secondary pill controls (rest, setup note, skip). */
-.pill-row { display: flex; gap: 8px; }
+.pill-row { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Pills share the row by their label widths and wrap to a second row when they can't fit;
+   a label never breaks inside its pill. */
 .pill {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-width: 0;
   min-height: var(--tap);
   padding: 0 12px;
@@ -508,7 +513,7 @@ input[type="date"].input::-webkit-date-and-time-value { text-align: left; }
 
 .block-card { gap: 16px; }
 .eyebrow { display: flex; align-items: center; gap: 8px; font-size: var(--t-foot); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-2); min-width: 0; }
-.eyebrow span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eyebrow span { min-width: 0; overflow-wrap: anywhere; }
 .slot-note { font-size: var(--t-sub); color: var(--fg-2); margin-top: -8px; }
 .ex-name-btn {
   display: flex;
@@ -579,7 +584,7 @@ input[type="date"].input::-webkit-date-and-time-value { text-align: left; }
 .chip-top { border-color: var(--fg-2); font-weight: 600; }
 .chip-pr { border-color: var(--gold); color: var(--gold); font-weight: 700; }
 .chip-btn-inline { min-height: var(--tap); font: inherit; font-size: var(--t-sub); cursor: pointer; }
-.entry { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.entry { display: grid; grid-template-columns: 3fr 2fr; gap: 12px; }
 .entry-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .entry-label { font-size: var(--t-foot); font-weight: 600; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .target-row { display: flex; align-items: center; gap: 8px; min-height: var(--tap); }
@@ -805,7 +810,7 @@ body:has(.action-bar) .rest-timer { bottom: calc(var(--tabbar-h) + var(--action-
   min-width: 0;
 }
 .meal-thumb { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: var(--r-ctl); background: var(--surface-2); display: flex; }
-.meal-meta { display: flex; justify-content: space-between; align-items: center; gap: 4px; font-size: var(--t-foot); color: var(--fg-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.meal-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px; font-size: var(--t-foot); color: var(--fg-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tag { font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--hairline-strong); white-space: nowrap; }
 .tag-on { color: var(--fg); border-color: var(--fg-2); }
 .tag-off { color: var(--fg-2); }
@@ -1043,3 +1048,10 @@ body:has(.action-bar) .rest-timer { bottom: calc(var(--tabbar-h) + var(--action-
 .btn-head.icon-only svg { width: 20px; height: 20px; }
 /* Headers with action buttons keep the sync dot only; the words would crowd the title. */
 .page-head:has(.btn-head) .sync-status.show-label .sync-label { display: none; }
+
+/* ---------- safety net: a label never runs outside its control ----------
+   Layout keeps every label inside its control (checked with a wide font at 375 and 402 px);
+   this only guards against a font wider than any tested, clipping instead of colliding.
+   Zero specificity (:where), so it never overrides a rule written for a specific control. */
+:where(button, .btn, .pill, .seg, .btn-text, .member-tab) { min-width: 0; max-width: 100%; }
+:where(.btn, .pill, .seg) { overflow: hidden; }

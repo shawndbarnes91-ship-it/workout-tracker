@@ -14,6 +14,14 @@ import { compressImage, storePhoto, progressPhotoPath, photoImg, deletePhoto } f
 const ANGLES = ['front', 'side', 'back'];
 const angleLabel = (a) => a.charAt(0).toUpperCase() + a.slice(1);
 
+// Compare picker labels stay short so two fit side by side on a small phone: "Nov 16",
+// with a short year only for an earlier year ("Nov 16 '25").
+function compareDay(d) {
+  const [y, m, day] = String(d).split('-').map(Number);
+  const dt = new Date(y, m - 1, day);
+  const md = dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return y === new Date().getFullYear() ? md : `${md} '${String(y).slice(2)}`;
+}
 let compareA = null;
 let compareB = null;
 
@@ -84,11 +92,11 @@ export async function renderProgress(container, onChange) {
         h('div', { class: 'stat-label' }, 'Body fat'),
         h('div', { class: 'big-stat' }, latestBf ? `${normBodyFat(latestBf.body_fat_pct)}%` : '-'),
         h('div', { class: 'muted small' }, latestBf ? fmtDay(latestBf.date) : 'Not logged yet'))) : h('p', { class: 'muted small' }, 'No bodyweight yet. Log it any day, or with a weekly check-in.'),
+    h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => openCheckin(data, onChange) }, icon('camera'), 'Weekly check-in'),
     h('div', { class: 'row gap' },
-      h('button', { type: 'button', class: 'btn btn-primary grow', onclick: () => openCheckin(data, onChange) }, icon('camera'), 'Weekly check-in'),
-      h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => openBodyweight(data, onChange) }, icon('scale'), 'Log bodyweight')
-    ),
-    h('button', { type: 'button', class: 'btn btn-secondary block', onclick: () => openProfile(data, onChange) }, icon('ruler'), 'Body profile')
+      h('button', { type: 'button', class: 'btn btn-secondary grow btn-stack', onclick: () => openBodyweight(data, onChange) }, icon('scale'), 'Log weight'),
+      h('button', { type: 'button', class: 'btn btn-secondary grow btn-stack', onclick: () => openProfile(data, onChange) }, icon('ruler'), 'Body profile')
+    )
   );
 
   // Compare view.
@@ -96,7 +104,7 @@ export async function renderProgress(container, onChange) {
     if (!dates.includes(compareA)) compareA = dates[dates.length - 1];
     if (!dates.includes(compareB)) compareB = dates[0];
     const sel = (value, onPick) => {
-      const s = h('select', { class: 'input', value, 'aria-label': 'Check-in date' }, dates.map((d) => h('option', { value: d }, fmtDay(d))));
+      const s = h('select', { class: 'input', value, 'aria-label': 'Check-in date' }, dates.map((d) => h('option', { value: d }, compareDay(d))));
       s.addEventListener('change', () => { onPick(s.value); onChange(); });
       return s;
     };
