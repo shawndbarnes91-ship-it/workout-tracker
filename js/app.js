@@ -6,7 +6,8 @@ import { seedIfNeeded } from './seed.js';
 import { start as startSync, mountStatus } from './sync.js';
 import { cleanupOldMealPhotos } from './photos.js';
 import { initTimer } from './timer.js';
-import { on, isEditing, anySheetOpen, h } from './util.js';
+import { on, isEditing, anySheetOpen, h, icon } from './util.js';
+import { isStandalone } from './install-hint.js';
 import * as workout from './workout.js';
 import * as diet from './diet.js';
 import * as supplements from './supplements.js';
@@ -69,25 +70,23 @@ function dockSyncStatus() {
   dock();
 }
 
-/**
- * In iPhone Safari (not the home-screen app) the page can run under the status bar
- * while the safe-area inset reads 0, so give the header a floor there.
+/*
+ * Top inset. The home-screen app (black-translucent status bar) reports the status bar
+ * height through env(safe-area-inset-top) and the fixed header pads by exactly that.
+ * In iPhone Safari the inset is 0: Safari keeps fixed elements below the status bar and
+ * tints the status bar area from the solid fixed header at top 0, so the header must
+ * not add its own gap there (an earlier 54 px floor caused a doubled black band).
  */
-function setTopFloor() {
-  const ua = navigator.userAgent || '';
-  const iPhone = /iPhone|iPod/.test(ua);
-  const standalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-  if (iPhone && !standalone) document.documentElement.style.setProperty('--min-top', '54px');
-}
 
 function bindTabs() {
   document.querySelectorAll('.tab').forEach((b) => {
+    if (b.dataset.icon && !b.querySelector('svg')) b.prepend(icon(b.dataset.icon));
     b.addEventListener('click', () => show(b.dataset.tab));
   });
 }
 
 async function boot() {
-  setTopFloor();
+  document.documentElement.classList.toggle('standalone', isStandalone());
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').then((reg) => {
       // The phone often resumes the app instead of relaunching it, so check for a new

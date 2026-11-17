@@ -2,11 +2,14 @@
 // display, progression cue, PRs, rest timer and supersets. Also links to
 // cardio logging, the exercise library and the template editor.
 
-import { save, saveMany, getMeta, setMeta } from './db.js';
+import { all, save, saveMany, getMeta, setMeta } from './db.js';
 import {
-  h, clear, toast, openSheet, confirmSheet, segmented, stepper, field, nowISO, fmtDay, fmtTime,
-  fmtLb, sortBy, ts, emptyNote, plural, pageHead, icon, pad2,
+  h, add, clear, toast, openSheet, confirmSheet, segmented, stepper, field, nowISO, fmtDay, fmtTime,
+  fmtLb, sortBy, ts, emptyNote, plural, pageHead, icon, pad2, recordBanner, fmtDuration,
 } from './util.js';
+import { installHint } from './install-hint.js';
+import { weightOn, sessionHours, liftKcal, fmtKcal, localDay } from './calories.js';
+import { oneBodyweightPerDay } from './body.js';
 import {
   loadLifting, exercisesFor, suggestedTemplateId, templateLabel, lastTime, topSet,
   lastExerciseForSlot, loadLabel, loadStep, sessionsWithSets, sessionPlan, planJson,
@@ -84,6 +87,7 @@ function renderHome(root, d) {
 
   root.append(
     pageHead({ title: 'Workout' }),
+    ...[installHint()].filter(Boolean),
     h('div', { class: 'card' },
       h('div', { class: 'section-label' }, 'Next up'),
       segmented(options, choice, (v) => {
@@ -115,8 +119,8 @@ function renderHome(root, d) {
       : h('div', { class: 'card' }, emptyNote('No workouts logged yet. Finished workouts show up here.')),
     h('div', { class: 'section-label' }, 'Library'),
     h('div', { class: 'list card' },
-      h('button', { type: 'button', class: 'list-row nav', onclick: () => { view = 'library'; rerender(); } }, h('span', { class: 'grow' }, 'Exercises')),
-      h('button', { type: 'button', class: 'list-row nav', onclick: () => { view = 'templates'; rerender(); } }, h('span', { class: 'grow' }, 'Templates')))
+      h('button', { type: 'button', class: 'list-row nav', onclick: () => { view = 'library'; rerender(); } }, icon('dumbbell', 'lead'), h('span', { class: 'grow' }, 'Exercises')),
+      h('button', { type: 'button', class: 'list-row nav', onclick: () => { view = 'templates'; rerender(); } }, icon('list', 'lead'), h('span', { class: 'grow' }, 'Templates')))
   );
 }
 
@@ -283,8 +287,8 @@ async function renderSession(root, d, session) {
       title: templateLabel(d, session.template_id),
       sub: `Started ${fmtTime(session.started_at)} · ${plural(sSets.length, 'set')}`,
       actions: [
-        h('button', { type: 'button', class: 'btn btn-secondary btn-head', 'aria-label': 'Add exercise', onclick: () => addExercise(session) }, icon('plus'), 'Add'),
-        h('button', { type: 'button', class: (allDone ? 'btn btn-primary' : 'btn btn-secondary') + ' btn-head', onclick: () => finishSession(session, sSets) }, 'Finish'),
+        h('button', { type: 'button', class: 'btn btn-secondary btn-head icon-only', 'aria-label': 'Add exercise', title: 'Add exercise', onclick: () => addExercise(session) }, icon('plus')),
+        h('button', { type: 'button', class: (allDone ? 'btn btn-primary' : 'btn btn-secondary') + ' btn-head', onclick: () => finishSession(d, session, sSets, blocks) }, icon('check'), 'Finish'),
       ],
     })
   );
@@ -434,17 +438,54 @@ async function discardSession(session, sSets) {
   rerender();
 }
 
-async function finishSession(session, sSets) {
+/** Gold banner for a new record. Bodyweight sets with no added load read as reps. */
+function celebrate(prs, w, r, ex) {
+  const text = w > 0 ? `New record: ${fmtLb(w)} lb × ${r}` : `New record: ${r} reps`;
+  recordBanner(text, ex.name);
+}
+
+async function finishSession(d, session, sSets, blocks) {
   if (!sSets.length) {
     if (await confirmSheet('No sets were logged. Discard this workout?', 'Discard')) await discardSession(session, sSets);
     return;
   }
-  await save('sessions', { ...session, ended_at: nowISO() });
+  const ended = { ...session, ended_at: nowISO() };
+  await save('sessions', ended);
   stopRest();
   cursor = null;
   await setMeta(CURSOR_KEY, null);
-  toast(`Workout saved: ${plural(sSets.length, 'set')}`);
   rerender();
+  const bodyweight = oneBodyweightPerDay(await all('bodyweight'));
+  openSummary(d, ended, sSets, blocks || [], bodyweight);
+}
+
+/** After Finish: what the workout added up to. */
+function openSummary(d, session, sSets, blocks, bodyweight) {
+  const durSec = Math.max(0, (ts(session.ended_at) - ts(session.started_at)) / 1000);
+  const volume = sSets.reduce((a, s) => a + (Number(s.weight_lb) || 0) * (Number(s.reps) || 0), 0);
+  const exDone = new Set(sSets.map((s) => s.exercise_id)).size;
+  const skipped = blocks.reduce((a, b) => a + b.members.filter((m) => m.skipped).length, 0);
+  const prIds = prSetIds(d.sets);
+  const records = sortBy(sSets.filter((s) => prIds.has(s.id)), (s) => ts(s.logged_at));
+  const weight = weightOn(bodyweight, localDay(session.started_at) || session.started_at.slice(0, 10));
+  const kcal = weight != null ? liftKcal(weight, sessionHours(session, sSets.length)) : null;
+  const tile = (label, value, cls = '') => h('div', { class: 'summary-tile ' + cls }, h('div', { class: 'stat-label' }, label), h('div', { class: 'big-stat' }, value));
+  openSheet('Workout saved', (body, api) => {
+    add(body,
+      h('div', { class: 'summary-grid' },
+        tile('Duration', fmtDuration(durSec)),
+        tile('Sets', String(sSets.length)),
+        tile('Volume', `${Math.round(volume).toLocaleString('en-US')} lb`),
+        tile('Exercises', skipped ? `${exDone} done, ${skipped} skipped` : `${exDone} done`),
+        tile('Records', String(records.length), records.length ? 'gold' : ''),
+        tile('Calories (est.)', kcal != null ? `${fmtKcal(kcal)} kcal` : '-')),
+      kcal == null ? h('p', { class: 'muted small' }, 'Log bodyweight on Stats to estimate calories.') : h('p', { class: 'muted small' }, 'Calories are an estimate from your bodyweight and the workout time.'),
+      records.length ? h('div', { class: 'summary-records' },
+        h('div', { class: 'section-label' }, 'New records'),
+        records.map((s) => h('div', { class: 'pr-text' }, icon('trophy'), `${(d.exById.get(s.exercise_id) || {}).name || 'Exercise'}: ${fmtLb(s.weight_lb)} lb × ${s.reps}`))) : null,
+      h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => api.close() }, 'Done')
+    );
+  }, { subtitle: `${templateLabel(d, session.template_id)} · ${fmtDay(session.started_at)}` });
 }
 
 async function addExercise(session) {
@@ -515,7 +556,7 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
         currentId: ex.id,
         onPick: (nex) => swapExercise(d, session, m, nex.id),
       }),
-    }, h('span', { class: 'ex-name' }, ex.name), h('span', { class: 'ex-change' }, 'Change', icon('chevronDown'))));
+    }, h('span', { class: 'ex-name' }, ex.name), h('span', { class: 'ex-change' }, icon('swap'), 'Change')));
     if (m.swap) {
       panel.append(h('div', { class: 'swap-note' },
         h('span', { class: 'grow' }, 'Swapped for today only'),
@@ -530,9 +571,9 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
   const rest = restOf(ex);
   if (ex.setup_note) panel.append(h('div', { class: 'setup-note' }, h('b', null, 'Setup '), ex.setup_note));
   panel.append(h('div', { class: 'pill-row' },
-    h('button', { type: 'button', class: 'pill', 'aria-label': rest > 0 ? `Rest ${rest} seconds. Change` : 'Rest timer off. Change', onclick: () => editRest(ex) }, rest > 0 ? `Rest ${restText(rest)}` : 'Rest off'),
-    h('button', { type: 'button', class: 'pill', onclick: () => editSetupNote(ex) }, ex.setup_note ? 'Edit note' : 'Add note'),
-    m.kind === 'slot' ? h('button', { type: 'button', class: 'pill', onclick: () => setSkip(session, block, true) }, 'Skip today') : null
+    h('button', { type: 'button', class: 'pill', 'aria-label': rest > 0 ? `Rest ${rest} seconds. Change` : 'Rest timer off. Change', onclick: () => editRest(ex) }, icon('timer'), rest > 0 ? `Rest ${restText(rest)}` : 'Rest off'),
+    h('button', { type: 'button', class: 'pill', onclick: () => editSetupNote(ex) }, icon('note'), ex.setup_note ? 'Edit note' : 'Add note'),
+    m.kind === 'slot' ? h('button', { type: 'button', class: 'pill', onclick: () => setSkip(session, block, true) }, icon('skip'), 'Skip today') : null
   ));
 
   // Last time and the progression cue (based on the top set).
@@ -632,7 +673,7 @@ function memberPanel(d, session, sSets, blocks, bIdx, mIdx) {
         logged_at: nowISO(),
       });
       const after = [...sSets, saved];
-      if (prs.length) toast(`PR! ${prs.map((p) => p.text).join(' · ')}`, { pr: true, ms: 4000 });
+      if (prs.length) celebrate(prs, w, r, ex);
 
       // Rest after a single set, or after the last exercise of a superset round. 0 means no timer.
       const myCount = memberSets(m, after).length;

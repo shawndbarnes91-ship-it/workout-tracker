@@ -21,10 +21,21 @@ export const COLUMNS = {
   supplements: ['id', 'name', 'unit', 'paused', 'archived', 'sort_order', 'updated_at', 'deleted'],
   supplement_versions: ['id', 'supplement_id', 'dose', 'schedule_json', 'slots', 'effective_from', 'updated_at', 'deleted'],
   supplement_logs: ['id', 'supplement_id', 'slot', 'date', 'taken_at', 'updated_at', 'deleted'],
-  bodyweight: ['id', 'date', 'weight_lb', 'updated_at', 'deleted'],
+  bodyweight: ['id', 'date', 'weight_lb', 'body_fat_pct', 'source', 'updated_at', 'deleted'],
   progress_photos: ['id', 'checkin_date', 'angle', 'photo_path', 'updated_at', 'deleted'],
 };
 export const TABLES = Object.keys(COLUMNS);
+
+/**
+ * Columns added after first release. The server may not have them until the owner runs
+ * the migration in migrations/; sync then pushes without them and keeps them on this device.
+ */
+export const OPTIONAL_COLUMNS = { bodyweight: ['body_fat_pct', 'source'] };
+
+/** Last write wins: a pulled row replaces the local one only when it is newer. */
+export function remoteWins(local, remote) {
+  return !local || ts(remote.updated_at) > ts(local.updated_at);
+}
 
 /** Keep only the known columns of a table (missing ones become null). */
 export function pick(table, row) {
@@ -156,8 +167,11 @@ export async function applyRemote(table, rows) {
   const outboxDrop = [];
   rows.forEach((r, i) => {
     const local = locals[i];
-    if (!local || ts(r.updated_at) > ts(local.updated_at)) {
-      toPut.push(pick(table, r));
+    if (remoteWins(local, r)) {
+      // A server without an optional column must not wipe the value kept on this device.
+      const row = pick(table, r);
+      for (const c of OPTIONAL_COLUMNS[table] || []) if (!(c in r) && local && local[c] != null) row[c] = local[c];
+      toPut.push(row);
       if (pending[i]) outboxDrop.push(pending[i].key);
     }
   });

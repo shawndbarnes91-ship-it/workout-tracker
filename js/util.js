@@ -1,6 +1,12 @@
 // Shared helpers: ids, dates, formatting, DOM building, sheets and toasts.
 
-export const ACCENT = '#4ADE80';
+import { icon } from './icons.js';
+
+export { icon }; // icons live in icons.js
+
+export const ACCENT = '#0A84FF';
+/** Records and PRs. */
+export const GOLD = '#E5C07B';
 
 /* ---------- event bus ---------- */
 export const bus = new EventTarget();
@@ -184,6 +190,26 @@ export function toast(msg, { pr = false, ms = 2600 } = {}) {
   }, ms);
 }
 
+/**
+ * Short gold banner for a new record. Non-blocking, about 2.5 s, one at a time.
+ * Motion is turned off by the reduced-motion rule in styles.css.
+ */
+export function recordBanner(text, sub) {
+  const root = document.getElementById('toast-root') || document.body;
+  root.querySelectorAll('.record-banner').forEach((x) => x.remove());
+  const b = h('div', { class: 'record-banner', role: 'status' },
+    icon('trophy'),
+    h('div', { class: 'record-text' }, h('div', { class: 'record-title' }, text), sub ? h('div', { class: 'record-sub' }, sub) : null));
+  root.prepend(b);
+  requestAnimationFrame(() => b.classList.add('show'));
+  setTimeout(() => {
+    b.classList.remove('show');
+    b.classList.add('hide');
+    setTimeout(() => b.remove(), 350);
+  }, 2500);
+  return b;
+}
+
 /* ---------- bottom sheet ---------- */
 /**
  * Opens a bottom sheet. build(body, api) fills it; api.close() closes it,
@@ -297,41 +323,6 @@ export function stepper({ value, step = 1, min = 0, decimals = true, label, onIn
   );
   wrap.input = input;
   return wrap;
-}
-
-/* ---------- icons (inline SVG, stroke follows the text colour) ---------- */
-const ICONS = {
-  back: '<path d="M15 5l-7 7 7 7"/>',
-  chevronDown: '<path d="M6 9l6 6 6-6"/>',
-  chevronRight: '<path d="M9 5l7 7-7 7"/>',
-  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>',
-  up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
-  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
-  timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9.5 2.5h5"/>',
-  note: '<path d="M5 19h4L19.5 8.5a2.1 2.1 0 0 0-3-3L6 16v3z"/>',
-  skip: '<path d="M6 6l9 6-9 6V6zM18 6v12"/>',
-  swap: '<path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/>',
-  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
-  unlink: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7M4 4l16 16"/>',
-  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
-  image: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M20 16l-5-5-8 8"/>',
-  run: '<circle cx="14" cy="4.5" r="1.8"/><path d="M8 21l3-6 3 2v5M6 11l3-3h4l2 4 3 1M11 15l-1-5"/>',
-  walk: '<circle cx="12" cy="4.5" r="1.8"/><path d="M10 21l2-7 3 3v4M8 12l2-4h3l2 4 2 1M12 14l-1-6"/>',
-  list: '<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
-  grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
-};
-export function icon(name) {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '2');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  svg.innerHTML = ICONS[name] || '';
-  return svg;
 }
 
 /**

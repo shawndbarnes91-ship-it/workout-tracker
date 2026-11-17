@@ -1,6 +1,6 @@
 // Export: one zip holding data.json (every table) plus one CSV per table.
 
-import { all, TABLES, COLUMNS } from './db.js';
+import { all, TABLES, COLUMNS, getMeta } from './db.js';
 import { toast, todayStr } from './util.js';
 
 function csvCell(v) {
@@ -24,6 +24,8 @@ export async function buildExport() {
     data.tables[t] = rows;
     zip.file(`${t}.csv`, toCSV(rows, COLUMNS[t]));
   }
+  // Settings kept on this device only (height for the body profile).
+  data.local = { body_profile: await getMeta('body_profile', null) };
   zip.file('data.json', JSON.stringify(data, null, 2));
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
 }

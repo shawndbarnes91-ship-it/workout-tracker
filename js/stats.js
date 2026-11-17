@@ -4,7 +4,7 @@
 
 import { all } from './db.js';
 import {
-  h, clear, segmented, field, ACCENT, DAY_MS, dateStr, todayStr, addDays, startOfWeek, dayStartMs, dayEndMs,
+  h, clear, segmented, field, GOLD, DAY_MS, icon, dateStr, todayStr, addDays, startOfWeek, dayStartMs, dayEndMs,
   fmtShortDay, fmtDay, fmtTime, fmtPace, round1, round2, e1rm, ts, sortBy, emptyNote, pad2, plural, pageHead,
 } from './util.js';
 import { loadLifting, muscleGroupOfSet, sessionsWithSets } from './lifting-data.js';
@@ -13,7 +13,9 @@ import { runPace, runPrIds } from './prs.js';
 import { PRIORITY_GROUPS } from './seed.js';
 import { renderProgress } from './progress.js';
 import { exportAll } from './export.js';
-import { configured, getState, syncNow } from './sync.js';
+import { configured, getState, syncNow, plainError } from './sync.js';
+import { dailyBurn, sessionsForBurn, fmtKcal, NEAT_FACTOR } from './calories.js';
+import { oneBodyweightPerDay, bodyFatByDate } from './body.js';
 
 const RANGES = [
   { value: '7d', label: '7d' },
@@ -24,6 +26,7 @@ const RANGES = [
 const DEFAULT_RANGE = '30d';
 const TARGET_PER_WEEK = 3;
 const GREY = '#6b6b6b';
+const ACCENT_BAR = '#0A84FF';
 
 let rangeKey = DEFAULT_RANGE;
 let customFrom = null;
@@ -150,9 +153,10 @@ export async function render(root) {
   charts = [];
   setChartDefaults();
 
-  const [d, runs, meals, bodyweight, supp] = await Promise.all([
+  const [d, runs, meals, bodyweightRows, supp] = await Promise.all([
     loadLifting(), all('runs'), all('meals'), all('bodyweight'), loadSupplements(),
   ]);
+  const bodyweight = oneBodyweightPerDay(bodyweightRows);
   if (gen !== renderGen) return;
   const earliestCandidates = [
     ...d.sessions.map((s) => ts(s.started_at)),
@@ -185,6 +189,9 @@ export async function render(root) {
     picker.append(h('div', { class: 'two-col' }, field('From', from), field('To', to)));
   }
   root.append(picker, h('p', { class: 'muted small center range-text' }, `${fmtDay(r.start)} to ${fmtDay(r.end)}`));
+
+  /* ----- Estimated burn (calories) ----- */
+  root.append(burnCard(r, d, runs, bodyweight));
 
   /* ----- Consistency ----- */
   const mealsIn = meals.filter((m) => inTs(r, m.logged_at));
@@ -249,8 +256,8 @@ export async function render(root) {
           borderColor: '#ffffff',
           borderWidth: 2,
           tension: 0.2,
-          pointBackgroundColor: (c) => (c.raw && c.raw.pr ? ACCENT : '#ffffff'),
-          pointBorderColor: (c) => (c.raw && c.raw.pr ? ACCENT : '#ffffff'),
+          pointBackgroundColor: (c) => (c.raw && c.raw.pr ? GOLD : '#ffffff'),
+          pointBorderColor: (c) => (c.raw && c.raw.pr ? GOLD : '#ffffff'),
           pointRadius: (c) => (c.raw && c.raw.pr ? 6 : 3),
         }],
       },
@@ -322,8 +329,8 @@ export async function render(root) {
             data: runsIn.map((x) => ({ x: at(x), y: round2(x.distance_mi), pr: runPRs.has(x.id) })),
             borderColor: '#ffffff',
             yAxisID: 'y',
-            pointBackgroundColor: (c) => (c.raw && c.raw.pr ? ACCENT : '#ffffff'),
-            pointBorderColor: (c) => (c.raw && c.raw.pr ? ACCENT : '#ffffff'),
+            pointBackgroundColor: (c) => (c.raw && c.raw.pr ? GOLD : '#ffffff'),
+            pointBorderColor: (c) => (c.raw && c.raw.pr ? GOLD : '#ffffff'),
             pointRadius: (c) => (c.raw && c.raw.pr ? 6 : 3),
           },
           {
@@ -332,8 +339,8 @@ export async function render(root) {
             borderColor: GREY,
             borderDash: [5, 4],
             yAxisID: 'y1',
-            pointBackgroundColor: (c) => (c.raw && c.raw.pr ? ACCENT : GREY),
-            pointBorderColor: (c) => (c.raw && c.raw.pr ? ACCENT : GREY),
+            pointBackgroundColor: (c) => (c.raw && c.raw.pr ? GOLD : GREY),
+            pointBorderColor: (c) => (c.raw && c.raw.pr ? GOLD : GREY),
             pointRadius: (c) => (c.raw && c.raw.pr ? 6 : 3),
           },
         ],
@@ -424,16 +431,131 @@ export async function render(root) {
   }));
 
   /* ----- Data ----- */
-  const st = getState();
-  root.append(
-    h('div', { class: 'card stack' },
-      h('div', { class: 'card-title' }, 'Data'),
-      h('p', { class: 'muted small' },
-        configured
-          ? `Sync: ${st.status === 'error' ? `error (${st.error})` : st.pending ? `${st.pending} changes waiting` : 'up to date'}${st.lastSync ? `. Last sync ${fmtTime(st.lastSync)}.` : '.'}`
-          : 'Local only. Data stays on this device until Supabase settings are added to config.js.'),
-      configured ? h('button', { type: 'button', class: 'btn btn-secondary block', onclick: () => syncNow().then(rerender) }, 'Sync now') : null,
-      h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => exportAll() }, 'Export all data (JSON + CSV)')
-    )
-  );
+  root.append(dataCard());
+}
+
+/* ---------- calories ---------- */
+
+function burnCard(r, d, runs, bodyweight) {
+  const bf = bodyFatByDate(bodyweight);
+  const sessions = sessionsForBurn(d.sessions, d.sets);
+  const burnOn = (day) => dailyBurn({ day, bodyweight, bodyFat: bf, sessions, runs });
+  const today = burnOn(todayStr());
+  const card = h('div', { class: 'card' }, h('div', { class: 'card-title with-icon' }, icon('flame'), 'Estimated burn'));
+  if (today.weightLb == null) {
+    card.append(h('p', { class: 'muted small' }, 'Log bodyweight to estimate the calories you burn each day.'));
+    return card;
+  }
+  const kcal = (n) => [fmtKcal(n), h('span', { class: 'burn-unit' }, 'kcal')];
+  if (today.total != null) {
+    card.append(
+      h('div', null, h('div', { class: 'stat-label' }, 'Today'), h('div', { class: 'burn-total' }, kcal(today.total))),
+      h('div', { class: 'burn-parts' },
+        h('div', null, h('div', { class: 'stat-label' }, 'Resting'), h('div', { class: 'big-stat' }, fmtKcal(today.resting))),
+        h('div', null, h('div', { class: 'stat-label' }, 'Active'), h('div', { class: 'big-stat' }, fmtKcal(today.active))))
+    );
+  } else {
+    card.append(
+      h('div', null, h('div', { class: 'stat-label' }, 'Active today'), h('div', { class: 'burn-total' }, kcal(today.active))),
+      h('p', { class: 'burn-hint' }, 'Add body fat % for your full daily total.')
+    );
+  }
+
+  // One bar per day in the range (resting and active stacked).
+  const days = [];
+  const last = new Date(Math.min(r.end, Date.now()));
+  for (let t = new Date(r.start); dateStr(t) <= dateStr(last) && days.length < 400; t = addDays(t, 1)) days.push(dateStr(t));
+  const rows = days.map(burnOn);
+  const hasResting = rows.some((x) => x.resting != null);
+  if (window.Chart && rows.some((x) => x.weightLb != null)) {
+    const canvas = h('canvas');
+    card.append(h('div', { class: 'chart-wrap', style: { height: '200px' } }, canvas));
+    const datasets = [];
+    if (hasResting) datasets.push({ label: 'Resting', data: rows.map((x) => (x.resting == null ? null : Math.round(x.resting))), backgroundColor: '#3a3a40', stack: 'k', borderRadius: 2 });
+    datasets.push({ label: 'Active', data: rows.map((x) => (x.weightLb == null ? null : Math.round(x.active))), backgroundColor: ACCENT_BAR, stack: 'k', borderRadius: 2 });
+    makeChart(canvas, {
+      type: 'bar',
+      data: { labels: days.map((x) => fmtShortDay(x)), datasets },
+      options: {
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { maxTicksLimit: 6, maxRotation: 0 } },
+          y: { stacked: true, beginAtZero: true, grid: { color: '#161616' } },
+        },
+        plugins: {
+          legend: { display: hasResting },
+          tooltip: { callbacks: { title: (items) => fmtDay(days[items[0].dataIndex]), label: (c) => `${c.dataset.label}: ${fmtKcal(c.raw)} kcal` } },
+        },
+      },
+    });
+  }
+  card.append(h('p', { class: 'muted small' },
+    `An estimate from your latest bodyweight${hasResting ? ' and body fat' : ''} and the training you log. ${hasResting ? `Resting uses Katch-McArdle times ${NEAT_FACTOR} for light daily movement. ` : ''}Active counts lifting time, runs and walking pad.`));
+  return card;
+}
+
+/* ---------- data and sync ---------- */
+
+function syncLine(st) {
+  if (!navigator.onLine) return { text: `You are offline. ${st.pending ? `${plural(st.pending, 'change')} will sync when you are back online.` : 'Everything is saved on this phone.'}`, cls: '' };
+  if (st.status === 'error') return { text: `Sync failed. ${plainError(st.error)}`, cls: 'err' };
+  if (st.status === 'syncing') return { text: 'Syncing now.', cls: '' };
+  const when = st.lastSync ? ` Last sync ${fmtWhen(st.lastSync)}.` : '';
+  return st.pending ? { text: `${plural(st.pending, 'change')} waiting to sync.${when}`, cls: '' } : { text: `Up to date.${when}`, cls: 'ok' };
+}
+
+function fmtWhen(iso) {
+  const t = ts(iso);
+  if (Date.now() - t < 60e3) return 'just now';
+  return t >= dayStartMs(todayStr()) ? `today at ${fmtTime(iso)}` : `${fmtShortDay(iso)} at ${fmtTime(iso)}`;
+}
+
+function dataCard() {
+  const card = h('div', { class: 'card stack' }, h('div', { class: 'card-title' }, 'Data'));
+  if (!configured) {
+    card.append(h('p', { class: 'muted small' }, 'Local only. Data stays on this device until Supabase settings are added to config.js.'));
+  } else {
+    const line = h('p', { class: 'muted small sync-line', role: 'status', 'aria-live': 'polite' });
+    const showLine = () => {
+      const l = syncLine(getState());
+      line.textContent = l.text;
+      line.className = `small sync-line ${l.cls || 'muted'}`;
+    };
+    showLine();
+    const label = h('span', null, 'Sync now');
+    const btn = h('button', { type: 'button', class: 'btn btn-secondary block' }, icon('refresh'), label);
+    let resetTimer = null;
+    const setBtn = (state, text) => {
+      btn.classList.toggle('is-syncing', state === 'busy');
+      btn.classList.toggle('is-synced', state === 'done');
+      btn.disabled = state === 'busy';
+      btn.replaceChildren(icon(state === 'done' ? 'check' : 'refresh'), h('span', null, text));
+    };
+    btn.addEventListener('click', async () => {
+      clearTimeout(resetTimer);
+      if (!navigator.onLine) {
+        showLine();
+        setBtn('idle', 'Offline, try again later');
+        resetTimer = setTimeout(() => setBtn('idle', 'Sync now'), 4000);
+        return;
+      }
+      setBtn('busy', 'Syncing…');
+      line.textContent = 'Syncing now.';
+      line.className = 'small sync-line muted';
+      const started = Date.now();
+      try { await syncNow(); } catch (e) { /* the state carries the error */ }
+      // Keep the spinner up long enough to be seen.
+      const wait = 700 - (Date.now() - started);
+      if (wait > 0) await new Promise((res) => setTimeout(res, wait));
+      const st = getState();
+      showLine();
+      if (st.status === 'error') setBtn('idle', 'Try again');
+      else {
+        setBtn('done', 'Synced just now');
+        resetTimer = setTimeout(() => { if (btn.isConnected) { setBtn('idle', 'Sync now'); showLine(); } }, 4000);
+      }
+    });
+    card.append(line, btn);
+  }
+  card.append(h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => exportAll() }, icon('download'), 'Export all data (JSON + CSV)'));
+  return card;
 }

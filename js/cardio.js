@@ -4,8 +4,10 @@
 import { all, save, remove } from './db.js';
 import {
   h, clear, field, toast, openSheet, confirmSheet, todayStr, fmtDay, fmtDuration, fmtPace,
-  round2, startOfWeek, addDays, dateStr, sortBy, emptyNote, pageHead,
+  round2, startOfWeek, addDays, dateStr, sortBy, emptyNote, pageHead, icon, recordBanner,
 } from './util.js';
+import { weightOn, cardioKcal, fmtKcal } from './calories.js';
+import { oneBodyweightPerDay } from './body.js';
 import { runPace, runRecords, detectRunPRs } from './prs.js';
 
 export async function loadCardio() {
@@ -137,8 +139,8 @@ export async function renderCardio(root, type, onBack) {
           : h('div', { class: 'cue' }, 'First run logged here. Any distance counts.'),
         longest || fastest
           ? h('div', { class: 'pr-line' },
-            longest ? h('span', { class: 'pr-text' }, `Longest ${round2(longest.distance_mi)} mi`) : null,
-            fastest ? h('span', { class: 'pr-text' }, `Best pace ${fmtPace(runPace(fastest))}`) : null)
+            longest ? h('span', { class: 'pr-text' }, icon('trophy'), `Longest ${round2(longest.distance_mi)} mi`) : null,
+            fastest ? h('span', { class: 'pr-text' }, icon('trophy'), `Best pace ${fmtPace(runPace(fastest))}`) : null)
           : null
       )
     );
@@ -168,8 +170,10 @@ export async function renderCardio(root, type, onBack) {
       cardioForm(type, {}, async (row) => {
         const prs = detectRunPRs(entries, row);
         await save('runs', row);
-        if (prs.length) toast(`PR! ${prs.map((p) => p.text).join(' · ')}`, { pr: true, ms: 4000 });
-        else toast(type === 'run' ? 'Run saved' : 'Walking pad saved');
+        const w = weightOn(oneBodyweightPerDay(await all('bodyweight')), row.date);
+        const kcal = w != null ? ` · about ${fmtKcal(cardioKcal(w, row))} kcal` : '. Log bodyweight to estimate calories.';
+        toast(`${type === 'run' ? 'Run saved' : 'Walking pad saved'}${kcal}`);
+        if (prs.length) recordBanner(`New record: ${prs[0].text.replace(/^Longest run: /, 'longest run ').replace(/^Best pace: /, 'best pace ')}`, prs.slice(1).map((p) => p.text).join(' · ') || null);
         onBack();
       }, type === 'run' ? 'Save run' : 'Save walking pad')
     ),

@@ -89,7 +89,8 @@ function renderToday(root, data) {
     pageHead({
       title: 'Supplements',
       sub: fmtDay(day),
-      actions: [h('button', { type: 'button', class: 'btn btn-secondary btn-head', onclick: () => { view = 'manage'; rerender(); } }, 'Manage')],
+      // Edit opens the full list (edit, pause, archive). Nothing to edit until one exists.
+      actions: data.supps.length ? [h('button', { type: 'button', class: 'btn btn-secondary btn-head', onclick: () => { view = 'manage'; rerender(); } }, icon('pencil'), 'Edit')] : [],
     })
   );
   const active = data.supps.filter((s) => !s.archived && !s.paused);
@@ -135,8 +136,10 @@ function renderToday(root, data) {
     }
     root.append(list);
   }
-  if (!shown) root.append(h('div', { class: 'card' }, emptyNote('Nothing scheduled today.')));
+  const addRow = () => h('button', { type: 'button', class: 'list-row add-row', onclick: () => openEditor(data, null) }, icon('plus'), h('span', { class: 'grow' }, 'Add'));
+  if (!shown) root.append(h('div', { class: 'card list' }, h('div', { class: 'list-row static' }, emptyNote('Nothing scheduled today.')), addRow()));
   else {
+    root.lastElementChild.append(addRow());
     root.insertBefore(h('div', { class: 'progress-line' },
       h('div', { class: 'progress-track' }, h('div', { class: 'progress-fill', style: { width: `${Math.round((taken / shown) * 100)}%` } })),
       h('span', { class: 'muted small num' }, `${taken} of ${shown} taken`)), root.children[1]);
@@ -145,7 +148,7 @@ function renderToday(root, data) {
 
 function renderManage(root, data) {
   root.append(
-    pageHead({ title: 'Manage', back: () => { view = 'today'; rerender(); }, backLabel: 'Today' }),
+    pageHead({ title: 'Edit', back: () => { view = 'today'; rerender(); }, backLabel: 'Today' }),
     h('button', { type: 'button', class: 'btn btn-primary block', onclick: () => openEditor(data, null) }, icon('plus'), 'Add supplement')
   );
   const groups = [
@@ -175,7 +178,7 @@ function openEditor(data, supp) {
   openSheet(isNew ? 'Add supplement' : 'Edit supplement', (body, api) => {
     const name = h('input', { class: 'input', type: 'text', value: supp ? supp.name : '', placeholder: 'Name', autocomplete: 'off', maxlength: '40' });
     const dose = h('input', { class: 'input', type: 'text', inputmode: 'decimal', value: current ? current.dose : '', placeholder: 'Dose' });
-    const unit = h('input', { class: 'input', type: 'text', value: supp ? supp.unit || '' : '', placeholder: 'mg, mcg, IU, capsules', list: 'unit-list' });
+    const unit = h('input', { class: 'input', type: 'text', value: supp ? supp.unit || '' : '', placeholder: 'mg, IU', list: 'unit-list' });
     const unitList = h('datalist', { id: 'unit-list' }, ['mg', 'mcg', 'g', 'IU', 'capsules', 'tablets', 'scoops', 'ml'].map((u) => h('option', { value: u })));
 
     const typeSel = h('select', { class: 'input', value: sched.type },

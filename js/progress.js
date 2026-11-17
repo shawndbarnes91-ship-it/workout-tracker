@@ -1,11 +1,14 @@
 // Progress section (inside Stats): weekly check-in with front, side and back photos
-// plus bodyweight, bodyweight on its own any day, and a side-by-side compare view.
-// Progress photos are compressed and kept permanently.
+// plus bodyweight, bodyweight (and optional body fat %) on its own any day, the body
+// profile, and a side-by-side compare view. Progress photos are compressed and kept
+// permanently. Scale readings from the RENPHO Shortcut arrive as bodyweight rows.
 
-import { all, save, saveMany } from './db.js';
+import { all, get, save, saveMany, getMeta, setMeta } from './db.js';
 import {
   h, add, clear, toast, openSheet, field, confirmSheet, pickImage, uuid, todayStr, fmtDay, fmtLb, sortBy, emptyNote,
+  icon, daysBetween,
 } from './util.js';
+import { oneBodyweightPerDay, bodyweightIdFor, normBodyFat, latestReading } from './body.js';
 import { compressImage, storePhoto, progressPhotoPath, photoImg, deletePhoto } from './photos.js';
 
 const ANGLES = ['front', 'side', 'back'];
@@ -14,9 +17,11 @@ const angleLabel = (a) => a.charAt(0).toUpperCase() + a.slice(1);
 let compareA = null;
 let compareB = null;
 
+const PROFILE_KEY = 'body_profile'; // { height_in } (this device only)
+
 export async function loadProgress() {
-  const [bodyweight, photos] = await Promise.all([all('bodyweight'), all('progress_photos')]);
-  return { bodyweight: sortBy(bodyweight, (b) => b.date + (b.updated_at || ''), true), photos };
+  const [bodyweight, photos, profile] = await Promise.all([all('bodyweight'), all('progress_photos'), getMeta(PROFILE_KEY, null)]);
+  return { bodyweight: oneBodyweightPerDay(bodyweight), photos, profile: profile || {} };
 }
 
 function checkinDates(photos) {
@@ -28,10 +33,32 @@ const weightOn = (bw, date) => {
   return b ? Number(b.weight_lb) : null;
 };
 
-async function upsertBodyweight(bodyweight, date, weight) {
-  const existing = bodyweight.find((b) => b.date === date);
-  return save('bodyweight', existing ? { ...existing, weight_lb: weight } : { date, weight_lb: weight });
+/**
+ * Saves the day's reading on that day's row: an older row for the date if one is live,
+ * else the row whose id comes from the date (the one the RENPHO Shortcut writes), even if
+ * it was deleted before. Body fat is kept when the entry leaves it empty.
+ */
+async function upsertBodyweight(bodyweight, date, weight, bodyFat) {
+  const live = bodyweight.find((b) => b.date === date);
+  const existing = live || (await get('bodyweight', bodyweightIdFor(date)));
+  const base = existing || { id: bodyweightIdFor(date), date };
+  const bf = bodyFat === undefined ? base.body_fat_pct ?? null : bodyFat;
+  return save('bodyweight', { ...base, date, weight_lb: weight, body_fat_pct: bf, source: 'manual', deleted: false });
 }
+
+const bfInput = (value) => h('input', {
+  class: 'input', type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'Optional',
+  'aria-label': 'Body fat percent', value: value == null ? '' : value,
+});
+
+/** Body fat from an input: null when empty; undefined when out of range (caller warns). */
+function readBf(input) {
+  if (!input.value.trim()) return null;
+  const v = normBodyFat(input.value);
+  return v == null ? undefined : v;
+}
+
+const sourceTag = (b) => (b.source === 'renpho' ? h('span', { class: 'tag tag-source' }, 'RENPHO') : null);
 
 /** Renders the Progress section into container; onChange re-renders the whole Stats tab. */
 export async function renderProgress(container, onChange) {
@@ -39,16 +66,29 @@ export async function renderProgress(container, onChange) {
   clear(container);
   const dates = checkinDates(data.photos);
   const latestBw = data.bodyweight[0];
+  const latestBf = data.bodyweight.find((b) => normBodyFat(b.body_fat_pct) != null);
+  const sinceCheckin = dates.length ? daysBetween(dates[0], todayStr()) : null;
 
   add(container,
-    latestBw ? h('div', null,
-      h('div', { class: 'stat-label' }, 'Latest bodyweight'),
-      h('div', { class: 'big-stat' }, `${fmtLb(latestBw.weight_lb)} lb`),
-      h('div', { class: 'muted small' }, fmtDay(latestBw.date))) : h('p', { class: 'muted small' }, 'No bodyweight yet. Log it any day, or with a weekly check-in.'),
+    sinceCheckin == null || sinceCheckin >= 7
+      ? h('div', { class: 'card due-card', role: 'note' },
+        h('span', { class: 'hint-icon' }, icon('camera')),
+        h('p', { class: 'grow' }, sinceCheckin == null ? 'Check-in due: photos + weight. Your first one sets the baseline.' : `Check-in due: photos + weight. Last one was ${sinceCheckin} days ago.`))
+      : null,
+    latestBw ? h('div', { class: 'two-col' },
+      h('div', null,
+        h('div', { class: 'stat-label' }, 'Latest bodyweight'),
+        h('div', { class: 'big-stat' }, `${fmtLb(latestBw.weight_lb)} lb`),
+        h('div', { class: 'muted small' }, fmtDay(latestBw.date), sourceTag(latestBw))),
+      h('div', null,
+        h('div', { class: 'stat-label' }, 'Body fat'),
+        h('div', { class: 'big-stat' }, latestBf ? `${normBodyFat(latestBf.body_fat_pct)}%` : '-'),
+        h('div', { class: 'muted small' }, latestBf ? fmtDay(latestBf.date) : 'Not logged yet'))) : h('p', { class: 'muted small' }, 'No bodyweight yet. Log it any day, or with a weekly check-in.'),
     h('div', { class: 'row gap' },
-      h('button', { type: 'button', class: 'btn btn-primary grow', onclick: () => openCheckin(data, onChange) }, 'Weekly check-in'),
-      h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => openBodyweight(data, onChange) }, 'Log bodyweight')
-    )
+      h('button', { type: 'button', class: 'btn btn-primary grow', onclick: () => openCheckin(data, onChange) }, icon('camera'), 'Weekly check-in'),
+      h('button', { type: 'button', class: 'btn btn-secondary grow', onclick: () => openBodyweight(data, onChange) }, icon('scale'), 'Log bodyweight')
+    ),
+    h('button', { type: 'button', class: 'btn btn-secondary block', onclick: () => openProfile(data, onChange) }, icon('ruler'), 'Body profile')
   );
 
   // Compare view.
@@ -105,7 +145,12 @@ export async function renderProgress(container, onChange) {
   else {
     container.append(h('div', { class: 'card list' }, data.bodyweight.slice(0, 20).map((b) =>
       h('button', { type: 'button', class: 'list-row nav', onclick: () => openBodyweight(data, onChange, b) },
-        h('span', { class: 'grow' }, fmtDay(b.date)), h('span', { class: 'trail strong' }, `${fmtLb(b.weight_lb)} lb`)))));
+        h('span', { class: 'grow' },
+          h('span', { class: 'row-title' }, fmtDay(b.date)),
+          normBodyFat(b.body_fat_pct) != null || b.source === 'renpho'
+            ? h('span', { class: 'row-sub' }, normBodyFat(b.body_fat_pct) != null ? h('span', null, `${normBodyFat(b.body_fat_pct)}% body fat`) : null, sourceTag(b))
+            : null),
+        h('span', { class: 'trail strong' }, `${fmtLb(b.weight_lb)} lb`)))));
   }
 }
 
@@ -113,9 +158,11 @@ function openBodyweight(data, onChange, entry = null) {
   openSheet(entry ? 'Edit bodyweight' : 'Log bodyweight', (body, api) => {
     const date = h('input', { class: 'input', type: 'date', value: entry ? entry.date : todayStr() });
     const w = h('input', { class: 'input big-input', type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'lb', 'aria-label': 'Bodyweight in pounds', value: entry ? entry.weight_lb : '' });
+    const bf = bfInput(entry ? normBodyFat(entry.body_fat_pct) : null);
     add(body,
       field('Date', date),
-      field('Weight (lb)', w),
+      h('div', { class: 'two-col' }, field('Weight (lb)', w), field('Body fat %', bf)),
+      entry && entry.source === 'renpho' ? h('p', { class: 'muted small' }, 'From your RENPHO scale. Saving here makes it a manual entry.') : null,
       h('button', {
         type: 'button',
         class: 'btn btn-primary block',
@@ -123,8 +170,13 @@ function openBodyweight(data, onChange, entry = null) {
           const val = parseFloat(w.value);
           if (!date.value) return toast('Pick a date.');
           if (!(val > 0)) return toast('Enter your weight.');
-          if (entry && entry.date !== date.value) await save('bodyweight', { ...entry, date: date.value, weight_lb: val });
-          else await upsertBodyweight(data.bodyweight, date.value, val);
+          const pct = readBf(bf);
+          if (pct === undefined) return toast('Body fat should be between 2 and 75 percent.');
+          if (entry && entry.date !== date.value) {
+            // Moving a reading to another day: that day's row takes it; this one is removed.
+            await save('bodyweight', { ...entry, source: 'manual', deleted: true });
+            await upsertBodyweight(data.bodyweight.filter((b) => b.id !== entry.id), date.value, val, pct);
+          } else await upsertBodyweight(data.bodyweight, date.value, val, pct);
           api.close();
           toast('Bodyweight saved');
           onChange();
@@ -135,7 +187,7 @@ function openBodyweight(data, onChange, entry = null) {
         class: 'btn btn-danger block',
         onclick: async () => {
           if (!(await confirmSheet('Delete this bodyweight entry?'))) return;
-          await save('bodyweight', { ...entry, deleted: true });
+          await save('bodyweight', { ...entry, source: 'manual', deleted: true });
           api.close();
           onChange();
         },
@@ -149,8 +201,11 @@ function openCheckin(data, onChange) {
   openSheet('Weekly check-in', (body, api) => {
     const date = h('input', { class: 'input', type: 'date', value: todayStr() });
     const w = h('input', { class: 'input big-input', type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'lb', 'aria-label': 'Bodyweight in pounds' });
-    const existing = data.bodyweight.find((b) => b.date === todayStr());
-    if (existing) w.value = existing.weight_lb;
+    // Prefill from the latest reading (scale or manual).
+    const latest = latestReading(data.bodyweight);
+    if (latest) w.value = latest.weight_lb;
+    const latestBf = data.bodyweight.find((b) => normBodyFat(b.body_fat_pct) != null);
+    const bf = bfInput(latestBf ? normBodyFat(latestBf.body_fat_pct) : null);
     const slotsWrap = h('div', { class: 'checkin-grid' });
     const drawSlots = () => {
       clear(slotsWrap);
@@ -179,6 +234,7 @@ function openCheckin(data, onChange) {
     drawSlots();
     body.append(
       h('div', { class: 'two-col' }, field('Date', date), field('Bodyweight (lb)', w)),
+      field('Body fat %', bf),
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Photos (one or more)'), slotsWrap),
       h('button', {
         type: 'button',
@@ -189,7 +245,9 @@ function openCheckin(data, onChange) {
           const angles = Object.keys(picked);
           if (!(val > 0)) return toast('Enter your bodyweight.');
           if (!angles.length) return toast('Add at least one photo.');
-          await upsertBodyweight(data.bodyweight, day, val);
+          const pct = readBf(bf);
+          if (pct === undefined) return toast('Body fat should be between 2 and 75 percent.');
+          await upsertBodyweight(data.bodyweight, day, val, pct);
           const rows = [];
           for (const angle of angles) {
             const id = uuid();
@@ -225,4 +283,43 @@ function openPhoto(p, onChange) {
       }, 'Delete photo')
     );
   }, { subtitle: fmtDay(p.checkin_date) });
+}
+
+/** Height (this device) and the latest body fat. Body fat is saved on a bodyweight reading. */
+function openProfile(data, onChange) {
+  openSheet('Body profile', (body, api) => {
+    const hIn = Number(data.profile.height_in) || 0;
+    const ft = h('input', { class: 'input big-input', type: 'number', inputmode: 'numeric', placeholder: 'ft', 'aria-label': 'Height feet', value: hIn ? Math.floor(hIn / 12) : '' });
+    const inch = h('input', { class: 'input big-input', type: 'number', inputmode: 'decimal', step: 'any', placeholder: 'in', 'aria-label': 'Height inches', value: hIn ? Math.round((hIn % 12) * 10) / 10 : '' });
+    const latest = data.bodyweight[0];
+    const bf = bfInput(latest ? normBodyFat(latest.body_fat_pct) : null);
+    add(body,
+      h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Height (ft : in)'), h('div', { class: 'duration-row' }, ft, h('span', { class: 'duration-sep', 'aria-hidden': 'true' }, ':'), inch)),
+      latest
+        ? field('Body fat %', bf, `Saved with your ${fmtDay(latest.date)} weigh-in. Each weigh-in can carry its own.`)
+        : h('p', { class: 'muted small' }, 'Log bodyweight first. Body fat % is saved with a weigh-in.'),
+      h('p', { class: 'muted small' }, 'Used for the calories estimate on this screen. The latest weight and body fat on or before each day count, so it keeps up as you change.'),
+      h('button', {
+        type: 'button',
+        class: 'btn btn-primary block',
+        onclick: async () => {
+          const f = parseInt(ft.value, 10) || 0;
+          const i = parseFloat(inch.value) || 0;
+          const total = f * 12 + i;
+          if (ft.value || inch.value) {
+            if (!(total >= 36 && total <= 96)) return toast('Enter a height between 3 and 8 feet.');
+          }
+          const pct = latest ? readBf(bf) : null;
+          if (pct === undefined) return toast('Body fat should be between 2 and 75 percent.');
+          await setMeta(PROFILE_KEY, { ...data.profile, height_in: total || null });
+          if (latest && pct !== (normBodyFat(latest.body_fat_pct) ?? null)) {
+            await save('bodyweight', { ...latest, body_fat_pct: pct, source: 'manual' });
+          }
+          api.close();
+          toast('Body profile saved');
+          onChange();
+        },
+      }, 'Save')
+    );
+  });
 }

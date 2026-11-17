@@ -1,7 +1,7 @@
-/* Workout Tracker. Dark only.
-   One type scale (system font), an 8 px spacing grid, three corner radii, and one
-   accent colour (#4ADE80) used only for primary actions and PRs. White marks the
-   current selection. Fixed bars (header, action bar, rest timer, tab bar) respect
+/* Workout Tracker. Dark only. Palette "Graphite and blue".
+   One type scale (system font), an 8 px spacing grid, three corner radii. Blue
+   (#0A84FF) marks primary actions, the current slot, the active tab and links; gold
+   (#E5C07B) marks records. Filled blue uses #0071E3 so white text keeps 4.5:1. Fixed bars (header, action bar, rest timer, tab bar) respect
    the iPhone safe areas in Safari and as a home-screen app. */
 
 :root {
@@ -9,19 +9,23 @@
 
   /* colour */
   --bg: #000000;
-  --surface: #111113;
-  --surface-2: #1c1c1f;
-  --surface-3: #2a2a2e;
-  --hairline: rgba(255, 255, 255, 0.1);
-  --hairline-strong: rgba(255, 255, 255, 0.18);
+  --bar: #0d0d0f;
+  --surface: #151518;
+  --surface-2: #1d1d21;
+  --surface-3: #26262b;
+  --hairline: #26262b;
+  --hairline-strong: #3a3a40;
   --fg: #f5f5f7;
-  --fg-2: #a1a1a6;
+  --fg-2: #8e8e93;
   --fg-3: #636366;
-  --accent: #4ADE80;
-  --accent-ink: #03200e;
+  --accent: #0A84FF;
+  --accent-fill: #0071E3;
+  --accent-ink: #ffffff;
+  --gold: #E5C07B;
+  --gold-ink: #1d1606;
   --danger: #ff6961;
   --warn: #f5c451;
-  --bar-bg: rgba(10, 10, 12, 0.84);
+  --bar-bg: rgba(13, 13, 15, 0.88);
 
   /* type scale */
   --t-large: 28px;
@@ -44,9 +48,10 @@
   --action-h: 72px;
   --timer-h: 64px;
 
-  /* safe areas; --min-top is raised by app.js in iOS Safari browser mode */
+  /* safe areas: the header pads by the top inset (0 in Safari, about 59 px as a home-screen app) */
   --min-top: 0px;
   --safe-top: max(env(safe-area-inset-top, 0px), var(--min-top));
+  --head-total: calc(var(--safe-top) + var(--head-h));
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
@@ -78,25 +83,14 @@ html, body {
 body { min-height: 100vh; min-height: 100dvh; }
 body.sheet-open { overflow: hidden; }
 
-/* Solid strip behind the status bar so scrolled content never shows under the clock. */
-body::before {
-  content: "";
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: var(--safe-top);
-  background: var(--bg);
-  z-index: 40;
-  pointer-events: none;
-}
+html { scroll-padding-top: calc(var(--head-total) + 8px); }
 
 button { -webkit-user-select: none; user-select: none; }
 
 .view {
   max-width: 640px;
   margin: 0 auto;
-  padding: 0 var(--gutter-r) calc(var(--tabbar-h) + var(--safe-bottom) + 32px) var(--gutter-l);
+  padding: calc(var(--head-total) + 16px) var(--gutter-r) calc(var(--tabbar-h) + var(--safe-bottom) + 32px) var(--gutter-l);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -125,20 +119,24 @@ p { margin: 0; }
 .num { font-variant-numeric: tabular-nums; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---------- page header (sticky, blurred, below the status bar) ---------- */
+/* ---------- page header ----------
+   Fixed at top 0 with a solid background that runs up through the status bar area.
+   As a home-screen app it pads by the status bar inset, so nothing shows above it; in
+   Safari (inset 0) it sits at the top edge and Safari tints the status bar from it.
+   Solid, not see-through, so scrolled content never shows behind the clock. */
 .page-head {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 30;
-  margin: 0 calc(-1 * var(--gutter-r)) 0 calc(-1 * var(--gutter-l));
-  padding: calc(var(--safe-top) + 8px) var(--gutter-r) 8px var(--gutter-l);
-  height: calc(var(--safe-top) + var(--head-h));
+  margin: 0;
+  padding: calc(var(--safe-top) + 8px) max(var(--gutter-r), calc((100% - 640px) / 2 + 16px)) 8px max(var(--gutter-l), calc((100% - 640px) / 2 + 16px));
+  height: var(--head-total);
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--bar-bg);
-  -webkit-backdrop-filter: saturate(160%) blur(20px);
-  backdrop-filter: saturate(160%) blur(20px);
+  background: var(--bar);
   border-bottom: 1px solid var(--hairline);
 }
 .head-title { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
@@ -190,6 +188,7 @@ p { margin: 0; }
 .sync-park { display: none; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); flex: none; }
 .dot-synced { background: var(--accent); }
+.sync-status.is-busy .dot { background: var(--fg); animation: pulse 1s infinite alternate; }
 .dot-syncing { background: var(--fg); animation: pulse 1s infinite alternate; }
 .dot-offline { background: var(--warn); }
 .dot-error { background: var(--danger); }
@@ -279,7 +278,7 @@ p { margin: 0; }
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn svg { width: 20px; height: 20px; flex: none; }
 .btn.block, .btn-text.block { width: 100%; display: flex; }
-.btn-primary { background: var(--accent); color: var(--accent-ink); min-height: var(--btn-primary-h); }
+.btn-primary { background: var(--accent-fill); color: var(--accent-ink); min-height: var(--btn-primary-h); }
 .btn-primary:active { filter: brightness(0.9); }
 .btn-secondary { background: var(--surface-2); color: var(--fg); border-color: var(--hairline); }
 .btn-secondary.selected { background: var(--fg); color: #000; border-color: var(--fg); }
@@ -289,11 +288,12 @@ p { margin: 0; }
   min-height: var(--tap);
   background: none;
   border: 0;
-  color: var(--fg);
+  color: var(--accent);
   font: inherit;
   font-weight: 600;
   padding: 0 8px;
   cursor: pointer;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   white-space: nowrap;
@@ -500,10 +500,10 @@ input[type="date"].input::-webkit-date-and-time-value { text-align: left; }
 }
 .slot-dot.done { color: var(--accent); }
 .slot-dot svg { width: 20px; height: 20px; }
-.slot-dot.current { background: var(--fg); color: #000; }
-.slot-dot.current.done { color: #0a7a35; }
+.slot-dot.current { background: var(--accent-fill); color: #fff; }
+.slot-dot.current.done { color: #fff; }
 .slot-dot.skipped { color: var(--fg-2); text-decoration: line-through; text-decoration-thickness: 2px; }
-.slot-dot.current.skipped { color: #48484a; }
+.slot-dot.current.skipped { color: #fff; }
 .slot-dot.extra::after { content: ""; position: absolute; top: 6px; right: 6px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.7; }
 
 .block-card { gap: 16px; }
@@ -530,12 +530,12 @@ input[type="date"].input::-webkit-date-and-time-value { text-align: left; }
   cursor: pointer;
 }
 .ex-name-btn .ex-name { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
-.ex-name-btn .ex-change { flex: none; display: inline-flex; align-items: center; gap: 2px; font-size: var(--t-foot); font-weight: 600; color: var(--fg-2); }
-.ex-name-btn .ex-change svg { width: 18px; height: 18px; }
+.ex-name-btn .ex-change { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-foot); font-weight: 600; color: var(--fg-2); }
+.ex-name-btn .ex-change svg { width: 16px; height: 16px; }
 .ex-name-btn:active { background: var(--surface-3); }
 .ex-title { font-size: var(--t-title); font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
 .swap-note { display: flex; align-items: center; gap: 8px; margin-top: -8px; font-size: var(--t-foot); color: var(--fg-2); }
-.swap-note .btn-text { font-size: var(--t-foot); color: var(--fg); padding: 0 4px; }
+.swap-note .btn-text { font-size: var(--t-foot); padding: 0 4px; }
 .setup-note { font-size: var(--t-sub); color: var(--fg-2); background: var(--surface-2); border-radius: var(--r-ctl); padding: 8px 12px; overflow-wrap: anywhere; }
 .setup-note b { color: var(--fg); font-weight: 600; }
 .member-tabs { display: flex; gap: 8px; }
@@ -577,7 +577,7 @@ input[type="date"].input::-webkit-date-and-time-value { text-align: left; }
   white-space: nowrap;
 }
 .chip-top { border-color: var(--fg-2); font-weight: 600; }
-.chip-pr { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.chip-pr { border-color: var(--gold); color: var(--gold); font-weight: 700; }
 .chip-btn-inline { min-height: var(--tap); font: inherit; font-size: var(--t-sub); cursor: pointer; }
 .entry { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .entry-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -591,7 +591,7 @@ input[type="date"].input::-webkit-date-and-time-value { text-align: left; }
 .detail-block { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--hairline); }
 .detail-block:last-of-type { border-bottom: 0; }
 .pr-line { display: flex; flex-wrap: wrap; gap: 8px 16px; }
-.pr-text { color: var(--accent); font-weight: 600; font-size: var(--t-sub); font-variant-numeric: tabular-nums; }
+.pr-text { display: inline-flex; align-items: center; gap: 6px; color: var(--gold); font-weight: 600; font-size: var(--t-sub); font-variant-numeric: tabular-nums; }
 .pace-out { color: var(--fg-2); font-weight: 600; text-align: center; font-size: var(--t-sub); font-variant-numeric: tabular-nums; }
 .done-card { align-items: flex-start; }
 
@@ -685,7 +685,7 @@ body:has(.action-bar) .rest-timer { bottom: calc(var(--tabbar-h) + var(--action-
   white-space: nowrap;
 }
 .tab svg { width: 24px; height: 24px; }
-.tab.active { color: var(--fg); }
+.tab.active { color: var(--accent); }
 
 /* ---------- sheet ---------- */
 .sheet-backdrop {
@@ -750,7 +750,7 @@ body:has(.action-bar) .rest-timer { bottom: calc(var(--tabbar-h) + var(--action-
   position: fixed;
   left: 0;
   right: 0;
-  top: calc(var(--safe-top) + var(--head-h) + 8px);
+  top: calc(var(--head-total) + 8px);
   z-index: 60;
   display: flex;
   flex-direction: column;
@@ -774,7 +774,7 @@ body:has(.action-bar) .rest-timer { bottom: calc(var(--tabbar-h) + var(--action-
   transition: opacity 0.2s, transform 0.2s;
 }
 .toast.show { opacity: 1; transform: none; }
-.toast-pr { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-size: var(--t-body); }
+.toast-pr { background: var(--gold); color: var(--gold-ink); border-color: var(--gold); font-size: var(--t-body); }
 
 /* ---------- diet and photos ---------- */
 .photo { width: 100%; border-radius: var(--r-ctl); display: block; background: var(--surface-2); }
@@ -844,7 +844,7 @@ body:has(.action-bar) .rest-timer { bottom: calc(var(--tabbar-h) + var(--action-
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .check-box svg { width: 16px; height: 16px; }
-.check-item.taken .check-box { background: var(--fg); border-color: var(--fg); }
+.check-item.taken .check-box { background: var(--accent-fill); border-color: var(--accent-fill); color: #fff; }
 .check-item.taken .row-title { color: var(--fg-2); text-decoration: line-through; }
 .day-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .day-btn {
@@ -865,13 +865,12 @@ body:has(.action-bar) .rest-timer { bottom: calc(var(--tabbar-h) + var(--action-
 /* ---------- stats ---------- */
 .range-picker {
   position: sticky;
-  top: calc(var(--safe-top) + var(--head-h));
+  top: calc(var(--head-total) - 1px);
   z-index: 20;
   margin: -8px calc(-1 * var(--gutter-r)) 0 calc(-1 * var(--gutter-l));
-  padding: 8px var(--gutter-r) 8px var(--gutter-l);
-  background: var(--bar-bg);
-  -webkit-backdrop-filter: saturate(160%) blur(20px);
-  backdrop-filter: saturate(160%) blur(20px);
+  padding: 9px var(--gutter-r) 8px var(--gutter-l);
+  background: var(--bar);
+  border-bottom: 1px solid var(--hairline);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -964,3 +963,83 @@ body:has(.action-bar) .rest-timer { bottom: calc(var(--tabbar-h) + var(--action-
 .two-col.three { grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .two-col.three .big-stat { font-size: 20px; }
 .list-row > svg { flex: none; width: 20px; height: 20px; color: var(--accent); }
+.list-row > svg.lead { color: var(--fg-2); }
+
+/* ---------- icons in labels ---------- */
+.section-label.with-icon { display: flex; align-items: center; gap: 6px; }
+.section-label svg { width: 16px; height: 16px; flex: none; }
+.card-title.with-icon { display: flex; align-items: center; gap: 8px; }
+.card-title.with-icon svg { width: 18px; height: 18px; flex: none; color: var(--fg-2); }
+.pr-text svg { width: 16px; height: 16px; flex: none; }
+.btn-head svg { width: 18px; height: 18px; }
+
+/* ---------- record banner (gold, about 2.5 s) ---------- */
+.record-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 560px;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--gold);
+  color: var(--gold-ink);
+  box-shadow: 0 10px 30px rgba(229, 192, 123, 0.25), 0 8px 24px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transform: translateY(-12px) scale(0.96);
+  transition: opacity 0.22s ease, transform 0.32s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.record-banner.show { opacity: 1; transform: none; }
+.record-banner.hide { opacity: 0; transform: translateY(-8px); transition: opacity 0.3s ease, transform 0.3s ease; }
+.record-banner svg { width: 28px; height: 28px; flex: none; }
+.record-banner.show svg { animation: trophy-pop 0.6s ease-out 0.1s; }
+@keyframes trophy-pop { 0% { transform: scale(0.6) rotate(-12deg); } 60% { transform: scale(1.15) rotate(6deg); } 100% { transform: none; } }
+.record-text { min-width: 0; }
+.record-title { font-size: var(--t-body); font-weight: 700; font-variant-numeric: tabular-nums; }
+.record-sub { font-size: var(--t-foot); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) {
+  .record-banner, .record-banner.show, .record-banner.hide { transform: none; }
+}
+
+/* ---------- workout summary ---------- */
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.summary-tile { background: #232327; border: 1px solid var(--hairline); border-radius: var(--r-ctl); padding: 12px; min-width: 0; }
+.summary-tile .big-stat { overflow-wrap: anywhere; }
+.summary-tile.gold .big-stat { color: var(--gold); }
+.summary-records { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---------- calories ---------- */
+.burn-total { font-size: 34px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.burn-unit { font-size: var(--t-sub); font-weight: 600; color: var(--fg-2); margin-left: 4px; letter-spacing: 0; }
+.burn-parts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.burn-hint { font-size: var(--t-foot); color: var(--fg-2); }
+
+/* ---------- sync button states ---------- */
+.btn.is-syncing:disabled { opacity: 1; }
+.btn.is-syncing svg { animation: spin 0.9s linear infinite; }
+.btn.is-synced svg { color: var(--accent); }
+.sync-line.ok { color: var(--fg); }
+.sync-line.err { color: var(--danger); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Add to Home Screen hint ---------- */
+.install-hint { flex-direction: row; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-color: #1f3a5c; background: #0c1726; }
+.install-hint p { font-size: var(--t-sub); color: var(--fg); }
+.hint-icon { flex: none; color: var(--accent); display: inline-flex; }
+.hint-icon svg { width: 22px; height: 22px; }
+.hint-close { background: transparent; border-color: transparent; color: var(--fg-2); }
+
+/* ---------- small add row at the end of a list ---------- */
+.add-row { color: var(--accent); font-weight: 600; }
+.add-row svg { color: var(--accent); }
+.list-row.add-row::after { display: none; }
+
+/* ---------- body data ---------- */
+.tag-source { color: var(--accent); border-color: #1f3a5c; margin-left: 8px; }
+.row-sub .tag-source:first-child { margin-left: 0; }
+.due-card { flex-direction: row; align-items: center; gap: 12px; border-color: #1f3a5c; background: #0c1726; }
+.due-card p { font-size: var(--t-sub); }
+.btn-head.icon-only { width: var(--tap); padding: 0; justify-content: center; }
+.btn-head.icon-only svg { width: 20px; height: 20px; }
+/* Headers with action buttons keep the sync dot only; the words would crowd the title. */
+.page-head:has(.btn-head) .sync-status.show-label .sync-label { display: none; }
