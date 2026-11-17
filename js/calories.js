@@ -61,9 +61,11 @@ export function bmrKatch(weightLb, bodyFatPct) {
 export function sessionHours(session, setCount) {
   const start = Date.parse(session && session.started_at);
   const end = Date.parse(session && session.ended_at);
-  let hours;
-  if (Number.isFinite(start) && Number.isFinite(end) && end > start) hours = (end - start) / 3600e3;
-  else hours = ((Number(setCount) || 0) * MIN_PER_SET_ESTIMATE) / 60;
+  // The larger of the clock time and the per-set estimate, so sets logged after the fact
+  // (a short or back-filled session) still count.
+  const bySets = ((Number(setCount) || 0) * MIN_PER_SET_ESTIMATE) / 60;
+  let hours = bySets;
+  if (Number.isFinite(start) && Number.isFinite(end) && end > start) hours = Math.max(bySets, (end - start) / 3600e3);
   return Math.min(SESSION_CAP_HOURS, Math.max(0, hours));
 }
 
