@@ -89,7 +89,8 @@ const timeScale = (r) => ({
 
 const paceTick = (v) => `${Math.floor(v / 60)}:${pad2(Math.round(v % 60))}`;
 
-/** Draws supplement dose-change markers as dashed vertical lines. */
+/** Draws supplement dose-change markers as dashed vertical lines, one per day. The
+ * names are listed under the chart (rotated labels on the lines collided). */
 const doseMarkers = {
   id: 'doseMarkers',
   afterDatasetsDraw(chart, _args, opts) {
@@ -99,21 +100,16 @@ const doseMarkers = {
     const x = scales.x;
     ctx.save();
     ctx.strokeStyle = '#8a8a8a';
-    ctx.fillStyle = '#cfcfcf';
     ctx.setLineDash([4, 4]);
-    ctx.font = '11px -apple-system, sans-serif';
+    const seen = new Set();
     for (const m of items) {
-      const px = x.getPixelForValue(m.x);
-      if (px < chartArea.left || px > chartArea.right) continue;
+      const px = Math.round(x.getPixelForValue(m.x));
+      if (px < chartArea.left || px > chartArea.right || seen.has(px)) continue;
+      seen.add(px);
       ctx.beginPath();
       ctx.moveTo(px, chartArea.top);
       ctx.lineTo(px, chartArea.bottom);
       ctx.stroke();
-      ctx.save();
-      ctx.translate(px + 3, chartArea.top + 2);
-      ctx.rotate(Math.PI / 2);
-      ctx.fillText(m.label, 0, 0);
-      ctx.restore();
     }
     ctx.restore();
   },
@@ -397,7 +393,8 @@ export async function render(root) {
     const markers = sortBy(supp.versions.filter((v) => inTs(r, v.effective_from) && suppById.has(v.supplement_id)), (v) => ts(v.effective_from))
       .map((v) => {
         const s = suppById.get(v.supplement_id);
-        return { x: ts(v.effective_from), label: `${s.name} ${doseText(v, s)}`, when: v.effective_from };
+        // One line per day: same-day changes share one marker and one list line.
+        return { x: dayStartMs(dateStr(new Date(ts(v.effective_from)))), label: `${s.name} ${doseText(v, s)}`, when: v.effective_from };
       });
     if (!bwIn.length) card.append(emptyNote('No bodyweight entries in this range.'));
     else {
@@ -426,7 +423,12 @@ export async function render(root) {
       });
     }
     if (markers.length) {
-      card.append(h('div', { class: 'marker-list' }, markers.map((m) => h('div', { class: 'muted small' }, `${fmtShortDay(m.when)}: ${m.label}`))));
+      const byDay = new Map();
+      for (const m of markers) {
+        if (!byDay.has(m.x)) byDay.set(m.x, { when: m.when, labels: [] });
+        byDay.get(m.x).labels.push(m.label);
+      }
+      card.append(h('div', { class: 'marker-list' }, [...byDay.values()].map((g) => h('div', { class: 'muted small' }, `${fmtShortDay(g.when)}: ${g.labels.join(', ')}`))));
     }
   }));
 

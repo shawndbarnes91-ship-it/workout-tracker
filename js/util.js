@@ -179,14 +179,25 @@ export function anySheetOpen() {
 }
 
 /* ---------- toast ---------- */
+// One toast at a time, in a band just above the bottom-most bar (tab bar, Log set bar or
+// rest timer), so it never sits over the header, a bar or a control that can't scroll
+// clear. A new toast replaces the one showing and restarts the timer; a tap dismisses it.
+let toastTimer = null;
 export function toast(msg, { pr = false, ms = 2600 } = {}) {
-  const root = document.getElementById('toast-root') || document.body;
+  let bar = document.getElementById('toast-bar');
+  if (!bar) {
+    bar = h('div', { id: 'toast-bar', class: 'toast-bar', 'aria-live': 'polite' });
+    bar.addEventListener('click', () => { clearTimeout(toastTimer); bar.replaceChildren(); document.body.classList.remove('toast-on'); });
+    document.body.append(bar);
+  }
+  clearTimeout(toastTimer);
   const t = h('div', { class: 'toast' + (pr ? ' toast-pr' : ''), role: 'status' }, msg);
-  root.append(t);
+  bar.replaceChildren(t);
+  document.body.classList.add('toast-on');
   requestAnimationFrame(() => t.classList.add('show'));
-  setTimeout(() => {
+  toastTimer = setTimeout(() => {
     t.classList.remove('show');
-    setTimeout(() => t.remove(), 300);
+    setTimeout(() => { t.remove(); if (!bar.firstChild) document.body.classList.remove('toast-on'); }, 300);
   }, ms);
 }
 

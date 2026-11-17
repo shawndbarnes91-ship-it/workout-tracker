@@ -3,7 +3,7 @@
 // deploy shows up on the next launch; the cached copy is used when offline. The
 // pinned CDN libraries are cache first. Bump VERSION whenever app files change.
 
-const VERSION = 'v5';
+const VERSION = 'v6';
 const NETWORK_TIMEOUT_MS = 4000; // slow gym signal: fall back to the cached copy
 const SHELL_CACHE = `wt-shell-${VERSION}`;
 const CDN_CACHE = 'wt-cdn-v1';

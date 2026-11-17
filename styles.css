@@ -90,14 +90,14 @@ button { -webkit-user-select: none; user-select: none; }
 .view {
   max-width: 640px;
   margin: 0 auto;
-  padding: calc(var(--head-total) + 16px) var(--gutter-r) calc(var(--tabbar-h) + var(--safe-bottom) + 32px) var(--gutter-l);
+  padding: calc(var(--head-total) + 16px) var(--gutter-r) calc(var(--tabbar-h) + var(--safe-bottom) + 32px + var(--toast-h, 0px)) var(--gutter-l);
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
-body:has(.action-bar) .view { padding-bottom: calc(var(--tabbar-h) + var(--action-h) + var(--safe-bottom) + 32px); }
-body.timer-on .view { padding-bottom: calc(var(--tabbar-h) + var(--timer-h) + var(--safe-bottom) + 32px); }
-body.timer-on:has(.action-bar) .view { padding-bottom: calc(var(--tabbar-h) + var(--action-h) + var(--timer-h) + var(--safe-bottom) + 32px); }
+body:has(.action-bar) .view { padding-bottom: calc(var(--tabbar-h) + var(--action-h) + var(--safe-bottom) + 32px + var(--toast-h, 0px)); }
+body.timer-on .view { padding-bottom: calc(var(--tabbar-h) + var(--timer-h) + var(--safe-bottom) + 32px + var(--toast-h, 0px)); }
+body.timer-on:has(.action-bar) .view { padding-bottom: calc(var(--tabbar-h) + var(--action-h) + var(--timer-h) + var(--safe-bottom) + 32px + var(--toast-h, 0px)); }
 
 h1 { font-size: var(--t-large); line-height: 1.15; margin: 0; font-weight: 700; letter-spacing: -0.02em; }
 h2 { font-size: var(--t-body); line-height: 1.3; margin: 0; font-weight: 600; }
@@ -735,7 +735,7 @@ body:has(.action-bar) .rest-timer { bottom: calc(var(--tabbar-h) + var(--action-
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding: 16px var(--gutter-r) calc(24px + var(--safe-bottom)) var(--gutter-l);
+  padding: 16px var(--gutter-r) calc(24px + var(--safe-bottom) + var(--toast-h, 0px)) var(--gutter-l);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -779,6 +779,30 @@ body:has(.action-bar) .rest-timer { bottom: calc(var(--tabbar-h) + var(--action-
   transition: opacity 0.2s, transform 0.2s;
 }
 .toast.show { opacity: 1; transform: none; }
+.toast-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--tabbar-h) + var(--safe-bottom));
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding: 8px var(--gutter-r) 8px var(--gutter-l);
+  background: var(--bar);
+  border-top: 1px solid var(--hairline);
+}
+.toast-bar:empty { display: none; }
+body:has(.action-bar) .toast-bar { bottom: calc(var(--tabbar-h) + var(--action-h) + var(--safe-bottom)); }
+body.timer-on .toast-bar { bottom: calc(var(--tabbar-h) + var(--timer-h) + var(--safe-bottom)); }
+body.timer-on:has(.action-bar) .toast-bar { bottom: calc(var(--tabbar-h) + var(--action-h) + var(--timer-h) + var(--safe-bottom)); }
+/* The toast sits in its own band on top of the bottom bars, like one more bar: content
+   scrolls under it the way it scrolls under the tab bar, and while it shows the page and
+   any open sheet get that much more room at the end, so every control can scroll clear.
+   With a sheet open the band sits at the bottom of the sheet. Tap it to dismiss. */
+body.sheet-open .toast-bar { bottom: 0; padding-bottom: calc(8px + var(--safe-bottom)); }
+body.toast-on { --toast-h: 88px; }
+.toast-bar .toast { max-width: min(560px, 100%); box-shadow: none; text-align: center; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; transform: translateY(8px); }
+.toast-bar .toast.show { transform: none; }
 .toast-pr { background: var(--gold); color: var(--gold-ink); border-color: var(--gold); font-size: var(--t-body); }
 
 /* ---------- diet and photos ---------- */
