@@ -1,7 +1,7 @@
 // Progress section (inside Stats): weekly check-in with front, side and back photos
 // plus bodyweight, bodyweight (and optional body fat %) on its own any day, the body
 // profile, and a side-by-side compare view. Progress photos are compressed and kept
-// permanently. Scale readings from the RENPHO Shortcut arrive as bodyweight rows.
+// permanently.
 
 import { all, get, save, saveMany, getMeta, setMeta } from './db.js';
 import {
@@ -43,7 +43,7 @@ const weightOn = (bw, date) => {
 
 /**
  * Saves the day's reading on that day's row: an older row for the date if one is live,
- * else the row whose id comes from the date (the one the RENPHO Shortcut writes), even if
+ * else the row whose id comes from the date, even if
  * it was deleted before. Body fat is kept when the entry leaves it empty.
  */
 async function upsertBodyweight(bodyweight, date, weight, bodyFat) {
@@ -66,8 +66,6 @@ function readBf(input) {
   return v == null ? undefined : v;
 }
 
-const sourceTag = (b) => (b.source === 'renpho' ? h('span', { class: 'tag tag-source' }, 'RENPHO') : null);
-
 /** Renders the Progress section into container; onChange re-renders the whole Stats tab. */
 export async function renderProgress(container, onChange) {
   const data = await loadProgress();
@@ -87,7 +85,7 @@ export async function renderProgress(container, onChange) {
       h('div', null,
         h('div', { class: 'stat-label' }, 'Latest bodyweight'),
         h('div', { class: 'big-stat' }, `${fmtLb(latestBw.weight_lb)} lb`),
-        h('div', { class: 'muted small' }, fmtDay(latestBw.date), sourceTag(latestBw))),
+        h('div', { class: 'muted small' }, fmtDay(latestBw.date))),
       h('div', null,
         h('div', { class: 'stat-label' }, 'Body fat'),
         h('div', { class: 'big-stat' }, latestBf ? `${normBodyFat(latestBf.body_fat_pct)}%` : '-'),
@@ -155,8 +153,8 @@ export async function renderProgress(container, onChange) {
       h('button', { type: 'button', class: 'list-row nav', onclick: () => openBodyweight(data, onChange, b) },
         h('span', { class: 'grow' },
           h('span', { class: 'row-title' }, fmtDay(b.date)),
-          normBodyFat(b.body_fat_pct) != null || b.source === 'renpho'
-            ? h('span', { class: 'row-sub' }, normBodyFat(b.body_fat_pct) != null ? h('span', null, `${normBodyFat(b.body_fat_pct)}% body fat`) : null, sourceTag(b))
+          normBodyFat(b.body_fat_pct) != null
+            ? h('span', { class: 'row-sub' }, h('span', null, `${normBodyFat(b.body_fat_pct)}% body fat`))
             : null),
         h('span', { class: 'trail strong' }, `${fmtLb(b.weight_lb)} lb`)))));
   }
@@ -170,7 +168,6 @@ function openBodyweight(data, onChange, entry = null) {
     add(body,
       field('Date', date),
       h('div', { class: 'two-col' }, field('Weight (lb)', w), field('Body fat %', bf)),
-      entry && entry.source === 'renpho' ? h('p', { class: 'muted small' }, 'From your RENPHO scale. Saving here makes it a manual entry.') : null,
       h('button', {
         type: 'button',
         class: 'btn btn-primary block',

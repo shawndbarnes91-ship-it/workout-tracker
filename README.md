@@ -43,11 +43,10 @@ to run: static files on GitHub Pages, data in the Supabase free tier.
 | `js/export.js` | Export to one zip (data.json plus one CSV per table) |
 | `js/icons.js` | Every icon (Lucide-style outline SVGs) |
 | `js/calories.js` | Calorie estimates: lifting, runs, walking pad, resting (Katch-McArdle) |
-| `js/body.js` | Bodyweight helpers: one row per day, body fat by date, RENPHO row ids |
+| `js/body.js` | Bodyweight helpers: one row per day, body fat by date |
 | `js/install-hint.js` | One-time Safari hint to add the app to the Home Screen |
-| `tests/calories.test.mjs` | Unit checks for calories and the RENPHO merge (`node tests/calories.test.mjs`) |
+| `tests/calories.test.mjs` | Unit checks for calories and the bodyweight merge (`node tests/calories.test.mjs`) |
 | `migrations/` | Additive SQL changes to run in the Supabase SQL Editor |
-| `docs/SETUP-RENPHO.md` | How to send RENPHO scale readings to the app every morning |
 
 Libraries load from CDNs at pinned versions and are cached by the service worker:
 `@supabase/supabase-js@2.45.4` (jsDelivr, ES module), Chart.js 4.4.1 and JSZip 3.10.1 (cdnjs).

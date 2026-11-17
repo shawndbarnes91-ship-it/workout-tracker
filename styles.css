@@ -1064,8 +1064,6 @@ body.toast-on { --toast-h: 88px; }
 .list-row.add-row::after { display: none; }
 
 /* ---------- body data ---------- */
-.tag-source { color: var(--accent); border-color: #1f3a5c; margin-left: 8px; }
-.row-sub .tag-source:first-child { margin-left: 0; }
 .due-card { flex-direction: row; align-items: center; gap: 12px; border-color: #1f3a5c; background: #0c1726; }
 .due-card p { font-size: var(--t-sub); }
 .btn-head.icon-only { width: var(--tap); padding: 0; justify-content: center; }

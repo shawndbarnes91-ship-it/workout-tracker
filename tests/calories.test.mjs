@@ -68,7 +68,7 @@ t('records: bodyweight and first-set edge cases do not false-trigger', () => {
   assert.ok(detectPRs([{ weight_lb: 215, reps: 6 }], 225, 6).some((p) => p.kind === 'e1rm'));
 });
 
-t('RENPHO Shortcut row merges into the app (one row per day, last write wins)', () => {
+t('A server-stamped row merges into the app (one row per day, last write wins)', () => {
   const day = '2026-11-16';
   assert.equal(bodyweightIdFor(day), 'b0d1e000-0000-4000-8000-000020261116');
   // Shaped like the Shortcut's POST after the server trigger stamped updated_at.

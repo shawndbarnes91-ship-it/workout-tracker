@@ -294,7 +294,7 @@ async function pullAll(sb) {
   let changed = 0;
   for (const table of TABLES) {
     let cursor = await getMeta(`pull:${table}`, '1970-01-01T00:00:00.000Z');
-    // The first page looks back a little: rows stamped by the server (the RENPHO Shortcut)
+    // The first page looks back a little: rows stamped by the server
     // can carry a time slightly behind this phone's clock. Re-pulled rows change nothing.
     let since = new Date(Math.max(0, ts(cursor) - PULL_OVERLAP_MS)).toISOString();
     for (;;) {

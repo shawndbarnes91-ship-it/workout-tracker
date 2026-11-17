@@ -1,7 +1,6 @@
 // Body data helpers (pure, no DOM; tested in tests/calories.test.mjs).
 //
-// One bodyweight row per day. New rows use an id built from the date, the same id the
-// RENPHO Shortcut writes (docs/SETUP-RENPHO.md), so a scale reading and a manual entry
+// One bodyweight row per day. New rows use an id built from the date, so two entries
 // for the same day land on the same row and last write wins. Older rows keep their
 // random ids; when two rows share a date, the newest one (updated_at) counts.
 
